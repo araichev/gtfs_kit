@@ -361,45 +361,47 @@ def _read_feed_from_path(path: pl.Path, dist_units: str) -> "Feed":
     if not path.exists():
         raise ValueError(f"Path {path} does not exist")
 
-    # Unzip path to temporary directory if necessary
-    if path.is_file():
-        zipped = True
-        tmp_dir = tempfile.TemporaryDirectory()
-        src_path = pl.Path(tmp_dir.name)
-        shutil.unpack_archive(str(path), tmp_dir.name, "zip")
-    else:
-        zipped = False
-        src_path = path
-
     # Read files into feed dictionary of DataFrames
     feed_dict = {table: None for table in cs.DTYPES}
-    for p in src_path.iterdir():
-        table = p.stem
-        # Skip empty files, irrelevant files, and files with no data
-        if (
-            p.is_file()
-            and p.stat().st_size
-            and p.suffix == ".txt"
-            and table in feed_dict
-        ):
-            # utf-8-sig gets rid of the byte order mark (BOM);
-            # see http://stackoverflow.com/questions/17912307/u-ufeff-in-python-string
-            csv_options = {
-                "na_values": ["", " ", "nan", "NaN", "null"],  # Add space to na_values
-                "keep_default_na": True,
-                "dtype_backend": "numpy_nullable",  # Use nullable dtypes
-            }
-            df = pd.read_csv(
-                p, dtype=cs.DTYPES[table], encoding="utf-8-sig", **csv_options
-            )
-            if not df.empty:
-                feed_dict[table] = cn.clean_column_names(df)
+    csv_options = {
+        "na_values": ["", " ", "nan", "NaN", "null"],  # Add space to na_values
+        "keep_default_na": True,
+        "dtype_backend": "numpy_nullable",
+        # utf-8-sig gets rid of the byte order mark (BOM);
+        # see http://stackoverflow.com/questions/17912307/u-ufeff-in-python-string
+        "encoding": "utf-8-sig",
+    }
+
+    if path.is_file():
+        with zipfile.ZipFile(path, "r") as zf:
+            for file_info in zf.infolist():
+                table = pl.Path(file_info.filename).stem
+                # Skip empty files, irrelevant files, and files with no data
+                if (
+                    not file_info.is_dir()
+                    and file_info.file_size
+                    and file_info.filename.endswith(".txt")
+                    and table in feed_dict
+                ):
+                    with zf.open(file_info.filename) as f:
+                        df = pd.read_csv(f, dtype=cs.DTYPES[table], **csv_options)
+                        if not df.empty:
+                            feed_dict[table] = cn.clean_column_names(df)
+    else:
+        for p in path.iterdir():
+            table = p.stem
+            # Skip empty files, irrelevant files, and files with no data
+            if (
+                p.is_file()
+                and p.stat().st_size
+                and p.suffix == ".txt"
+                and table in feed_dict
+            ):
+                df = pd.read_csv(p, dtype=cs.DTYPES[table], **csv_options)
+                if not df.empty:
+                    feed_dict[table] = cn.clean_column_names(df)
 
     feed_dict["dist_units"] = dist_units
-
-    # Delete temporary directory
-    if zipped:
-        tmp_dir.cleanup()
 
     # Create feed
     return Feed(**feed_dict)

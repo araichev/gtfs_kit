@@ -322,15 +322,20 @@ def test_restrict_to_trips():
     feed = nyc_subway
     # Grab a stop with a parent station
     stop_id = feed.stops.loc[lambda x: x["parent_station"].notna(), "stop_id"].iat[0]
-    parent_id = feed.stops.loc[lambda x: x["stop_id"] == stop_id, "parent_station"].iat[
-        0
-    ]
+    parent_id = feed.stops.loc[lambda x: x["stop_id"] == stop_id, "parent_station"].iat[0]
     # Get one of its trips
     trip_id = feed.stop_times.loc[lambda x: x["stop_id"] == stop_id, "trip_id"].iat[0]
     # Restrict feed to that trip and resulting feed should contain that parent station
     feed2 = feed.restrict_to_trips([trip_id])
     assert parent_id in feed2.stops["stop_id"].values
     assert parent_id in feed2.transfers["from_stop_id"].values
+
+    # Should not throw error when parent station absent
+    feed1 = cairns.copy()
+    del feed1.stops["parent_station"]
+    trip_ids = feed1.trips["trip_id"][:2].values
+    feed2 = gkm.restrict_to_trips(feed1, trip_ids)
+    assert set(feed2.trips["trip_id"]) == set(trip_ids)
 
 
 def test_restrict_to_routes():

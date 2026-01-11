@@ -151,17 +151,13 @@ def compute_trip_activity(feed: "Feed", dates: list[str]) -> pd.DataFrame:
     if not dates:
         return pd.DataFrame()
 
-    # Get trip activity table for each day
-    frames = [feed.trips[["trip_id"]]]
+    active_services_by_date = {date: get_active_services(feed, date) for date in dates}
+    f = feed.trips[["trip_id", "service_id"]].copy()
     for date in dates:
-        frames.append(get_trips(feed, date)[["trip_id"]].assign(**{date: 1}))
+        active_services = active_services_by_date[date]
+        f[date] = f["service_id"].isin(active_services).astype(int)
 
-    # Merge daily trip activity tables into a single table
-    f = ft.reduce(lambda left, right: left.merge(right, how="outer"), frames).fillna(
-        {date: 0 for date in dates}
-    )
-    f[dates] = f[dates].astype(int)
-    return f
+    return f.drop("service_id", axis=1)
 
 
 def compute_busiest_date(feed: "Feed", dates: list[str]) -> str:

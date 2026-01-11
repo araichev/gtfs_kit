@@ -81,6 +81,7 @@ def test_build_stop_timetable():
     # Empty check
     f = gks.build_stop_timetable(feed, stop_id, [])
     assert f.empty
+    assert set(f.columns) == expect_cols
 
 
 def test_geometrize_stops():

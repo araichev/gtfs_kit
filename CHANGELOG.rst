@@ -6,6 +6,7 @@ Changelog
 - Sped up reading GTFS feeds from file and a few other functions, thanks to user ``abdelq`` and `pull request 37 <https://github.com/araichev/gtfs_kit/pull/37>`_.
 - Handled the case of missing ``parent_station`` column in ``miscellany.restrict_to_trips``, thereby remedying `issue 39<https://github.com/araichev/gtfs_kit/issues/39>`_.
 - Updated docs URL in README.
+- Updated dependencies.
 
 12.0.1, 2025-11-06
 ------------------

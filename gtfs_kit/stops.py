@@ -563,34 +563,39 @@ def compute_stop_time_series(
 
 def build_stop_timetable(feed: "Feed", stop_id: str, dates: list[str]) -> pd.DataFrame:
     """
-    Return a DataFrame containing the timetable for the given stop ID
-    and dates (YYYYMMDD date strings)
-
-    Return a DataFrame whose columns are all those in ``feed.trips`` plus those in
+    Return a (possibly empty) DataFrame containing the timetable for the given stop ID
+    and dates (YYYYMMDD date strings).
+    The columns are all those in ``feed.trips`` plus those in
     ``feed.stop_times`` plus ``'date'``, and the stop IDs are restricted to the given
     stop ID.
     The result is sorted by date then departure time.
     """
     dates = feed.subset_dates(dates)
     if not dates:
-        return pd.DataFrame()
+        cols = set(feed.trips.columns) | set(feed.stop_times.columns) | {"date"}
+        return pd.DataFrame(columns=list(cols))
 
-    st = feed.stop_times[feed.stop_times["stop_id"] == stop_id]
-    t = pd.merge(feed.trips, st, on="trip_id")
+    # Get trips that visit the stop
+    st = feed.stop_times.loc[lambda x: x["stop_id"] == stop_id]
+    t = feed.trips.merge(st, on="trip_id")
 
-    a = feed.compute_trip_activity(dates)
-    a = a[a["trip_id"].isin(t["trip_id"])]
-
-    a_long = a.melt(
-        id_vars="trip_id",
-        value_vars=dates,
-        var_name="date",
-        value_name="active",
+    # Restrict to trips active on dates and reshape
+    a_long = (
+        feed.compute_trip_activity(dates)
+        .loc[lambda x: x["trip_id"].isin(t["trip_id"])]
+        .melt(
+            id_vars="trip_id",
+            value_vars=dates,
+            var_name="date",
+            value_name="active",
+        )
+        .loc[lambda x: x["active"] == 1]
+        .filter(["trip_id", "date"])
     )
-    a_long = a_long[a_long["active"] == 1][["trip_id", "date"]]
 
+    # Format timetable nicely
     return (
-        pd.merge(t, a_long)
+        t.merge(a_long, on="trip_id")
         .assign(dtime=lambda x: x["departure_time"].map(hp.timestr_to_seconds))
         .sort_values(["date", "dtime"], ignore_index=True)
         .drop("dtime", axis=1)

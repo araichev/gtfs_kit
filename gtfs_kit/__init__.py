@@ -10,4 +10,4 @@ from .stop_times import *
 from .stops import *
 from .trips import *
 
-__version__ = "12.0.1"
+__version__ = "12.0.2"

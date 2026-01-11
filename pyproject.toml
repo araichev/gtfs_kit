@@ -1,6 +1,6 @@
 [project]
 name = "gtfs-kit"
-version = "12.0.1"
+version = "12.0.2"
 description = "A Python library for analyzing GTFS feeds."
 readme = "README.rst"
 requires-python = ">=3.10"
@@ -31,6 +31,7 @@ dev = [
     "plotly>=6.1.2",
     "sphinx-rtd-theme>=3.0.2",
     "nbformat>=5.10.4",
+    "ghp-import>=2.1.0",
 ]
 
 [project.urls]

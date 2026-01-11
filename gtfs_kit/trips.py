@@ -152,14 +152,12 @@ def compute_trip_activity(feed: "Feed", dates: list[str]) -> pd.DataFrame:
         return pd.DataFrame()
 
     active_services_by_date = {date: get_active_services(feed, date) for date in dates}
-
     f = feed.trips[["trip_id", "service_id"]].copy()
     for date in dates:
         active_services = active_services_by_date[date]
         f[date] = f["service_id"].isin(active_services).astype(int)
-    f.drop("service_id", axis=1, inplace=True)
 
-    return f
+    return f.drop("service_id", axis=1)
 
 
 def compute_busiest_date(feed: "Feed", dates: list[str]) -> str:

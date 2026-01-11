@@ -22,9 +22,8 @@ def clean_column_names(df: pd.DataFrame) -> pd.DataFrame:
     Strip the whitespace from all column names in the given DataFrame
     and return the result.
     """
-    f = df.copy()
-    f.columns = [col.strip() for col in f.columns]
-    return f
+    df.columns = [col.strip() for col in df.columns]
+    return df
 
 
 def clean_ids(feed: "Feed") -> "Feed":

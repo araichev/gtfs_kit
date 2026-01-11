@@ -575,20 +575,22 @@ def build_stop_timetable(feed: "Feed", stop_id: str, dates: list[str]) -> pd.Dat
     if not dates:
         return pd.DataFrame()
 
-    t = pd.merge(feed.trips, feed.stop_times)
-    t = t[t["stop_id"] == stop_id].copy()
-    a = feed.compute_trip_activity(dates)
+    st = feed.stop_times[feed.stop_times["stop_id"] == stop_id]
+    t = pd.merge(feed.trips, st, on="trip_id")
 
-    frames = []
-    for date in dates:
-        # Slice to stops active on date
-        ids = a.loc[a[date] == 1, "trip_id"]
-        f = t[t["trip_id"].isin(ids)].copy()
-        f["date"] = date
-        frames.append(f)
+    a = feed.compute_trip_activity(dates)
+    a = a[a["trip_id"].isin(t["trip_id"])]
+
+    a_long = a.melt(
+        id_vars="trip_id",
+        value_vars=dates,
+        var_name="date",
+        value_name="active",
+    )
+    a_long = a_long[a_long["active"] == 1][["trip_id", "date"]]
 
     return (
-        pd.concat(frames)
+        pd.merge(t, a_long)
         .assign(dtime=lambda x: x["departure_time"].map(hp.timestr_to_seconds))
         .sort_values(["date", "dtime"], ignore_index=True)
         .drop("dtime", axis=1)

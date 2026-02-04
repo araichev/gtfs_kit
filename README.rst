@@ -4,6 +4,7 @@ GTFS Kit
 
 GTFS Kit is a Python 3.10+ library for analyzing `General Transit Feed Specification (GTFS) <https://en.wikipedia.org/wiki/GTFS>`_ data in memory without a database.
 It uses Pandas and GeoPandas to do the heavy lifting.
+(Seems to work fine with Pandas 2 and Pandas 3.)
 
 The functions/methods of GTFS Kit assume a valid GTFS feed but offer no inbuilt validation, because GTFS validation is complex and already solved by dedicated libraries.
 So unless you know what you're doing, use the `Canonical GTFS Validator <https://gtfs-validator.mobilitydata.org/>`_ before you analyze a feed with GTFS Kit.
@@ -45,7 +46,7 @@ Notes
   I don't think this issue causes any bugs in GTFS Kit, but you and i have been warned.
   Thanks to user Github user ``derhuerst`` for bringing this to my attention in `closed Issue 8 <https://github.com/mrcagney/gtfs_kit/issues/8#issue-1063633457>`_.
 - With release 10.0.0, i removed the validation module ``validators.py`` to avoid duplicating the work of what is now `the canonical feed validator <https://github.com/MobilityData/gtfs-validator>`_ (written in Java).
-- I'll probably move to Polars + Polars ST for the next big release so the library can handle big feeds faster.
+- I might require Pandas 3 in the future to take advantage of its new features.
 
 Maintainer Notes
 ================

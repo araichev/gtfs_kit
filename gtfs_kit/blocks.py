@@ -98,8 +98,8 @@ def active_blocks_by_freq(feed, dates, freq, trip_stats: pd.DataFrame | None = N
     
     active_block_results = []
     for d in dates:
-        cbt = compute_block_times(feed, d, trip_stats, freq=freq)
-        active_blocks = active_blocks_by_freq_0(cbt, freq=freq, block_list=block_list, block_filt=block_filt)
+        block_times = compute_block_times(feed, d, trip_stats, freq=freq)
+        active_blocks = active_blocks_by_freq_0(block_times, freq=freq, block_list=block_list, block_filt=block_filt)
         if active_blocks.shape[0]:
             active_block_results.append(active_blocks)
         else:

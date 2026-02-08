@@ -158,6 +158,9 @@ class Feed(object):
         name_stop_patterns,
         trips_to_geojson,
     )
+    from .blocks import (
+        active_blocks_by_freq
+    )
 
     def __init__(
         self,

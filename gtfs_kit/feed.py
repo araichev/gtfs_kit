@@ -159,7 +159,7 @@ class Feed(object):
         trips_to_geojson,
     )
     from .blocks import (
-        active_blocks_by_freq
+        compute_block_time_series
     )
 
     def __init__(

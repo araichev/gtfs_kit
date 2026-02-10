@@ -34,7 +34,7 @@ def _timestr_to_dt(x: str, date: dt.date) -> dt.datetime:
     return dt.datetime.combine(date, dt.time()) + dt.timedelta(seconds=s)
 
 
-def compute_block_times(
+def compute_block_stats(
     feed: "Feed",
     date: str,
     trip_stats: pd.DataFrame | None = None,
@@ -76,12 +76,20 @@ def compute_block_times(
     for time_col, dt_col in [("start_time", "start_dt"), ("end_time", "end_dt")]:
         ts[dt_col] = ts[time_col].map(lambda x: _timestr_to_dt(x, block_date))
 
-    # Find start and end times for all blocks
-    return ts.groupby("block_id").agg(start_dt=("start_dt", "min"), end_dt=("end_dt", "max"))
+    # Find stats for all blocks
+    block_stats = ts.groupby("block_id").agg(
+        start_dt=("start_dt", "min"), 
+        end_dt=("end_dt", "max"),
+        duration=("duration", "sum"),
+        distance=("distance", "sum")
+                 )
+    block_stats["speed"] = block_stats["distance"] / block_stats["duration"]
+
+    return block_stats
 
 
-def _active_blocks_by_freq(
-    block_times: pd.DataFrame,
+def _compute_block_time_series(
+    block_stats: pd.DataFrame,
     freq: str = "h",
     block_list: list[str] | None = None,
     block_filt: Callable | None = None,
@@ -90,17 +98,17 @@ def _active_blocks_by_freq(
     Helper function for ``active_blocks_by_freq``.
     """
     if block_list:  # filter for list of blocks
-        block_times = block_times[block_times.index.isin(block_list)]
+        block_stats = block_stats[block_stats.index.isin(block_list)]
     if block_filt:  # filter blocks using function
-        block_times = block_times[list(map(block_filt, block_times.index))]
+        block_stats = block_stats[list(map(block_filt, block_stats.index))]
 
     # Return none if no blocks in block times
-    if not block_times.shape[0]:
+    if not block_stats.shape[0]:
         return pd.DataFrame(columns=["active_blocks", "block_starts", "block_ends"])
 
     # Create dt index to check for active blocks
-    first_block = pd.Timestamp(block_times["start_dt"].min())
-    last_block = pd.Timestamp(block_times["end_dt"].max())
+    first_block = pd.Timestamp(block_stats["start_dt"].min())
+    last_block = pd.Timestamp(block_stats["end_dt"].max())
     day_start = first_block.floor("1D")
     range_start = first_block.floor(freq)
     range_end = last_block.ceil(freq)
@@ -111,7 +119,7 @@ def _active_blocks_by_freq(
     active_blocks = []
     for s in dr:
         e = (s + pd.Timedelta(minutes=1)).ceil(freq)  # use (s)tart and (e)nd of freq
-        ab = block_times[(block_times["start_dt"] < e) & (block_times["end_dt"] >= s)]
+        ab = block_stats[(block_stats["start_dt"] < e) & (block_stats["end_dt"] >= s)]
         active_blocks.append(ab.shape[0])
 
     active_blocks = pd.Series(
@@ -120,14 +128,14 @@ def _active_blocks_by_freq(
 
     # Count block starts and ends by hour
     block_starts = (
-        pd.Series(index=block_times["start_dt"], data=1, name="block_starts")
+        pd.Series(index=block_stats["start_dt"], data=1, name="block_starts")
         .resample(freq)
         .count()
         .reindex(full_dr, fill_value=0)
     )
 
     block_ends = (
-        pd.Series(index=block_times["end_dt"], data=1, name="block_ends")
+        pd.Series(index=block_stats["end_dt"], data=1, name="block_ends")
         .resample(freq)
         .count()
         .reindex(full_dr, fill_value=0)
@@ -136,7 +144,7 @@ def _active_blocks_by_freq(
     return pd.concat([active_blocks, block_starts, block_ends], axis=1)
 
 
-def active_blocks_by_freq(
+def compute_block_time_series(
     feed: "Feed",
     dates: list[str],
     freq: str,
@@ -175,13 +183,14 @@ def active_blocks_by_freq(
 
     active_block_results = []
     for d in dates:
-        block_times = compute_block_times(feed, d, trip_stats)
-        active_blocks = _active_blocks_by_freq(
-            block_times, freq=freq, block_list=block_list, block_filt=block_filt
+        block_stats = compute_block_stats(feed, d, trip_stats)
+        active_blocks = _compute_block_time_series(
+            block_stats, freq=freq, block_list=block_list, block_filt=block_filt
         )
         if active_blocks.shape[0]:
             active_block_results.append(active_blocks)
-        else:
+        else: 
+            # create empty results if no blocks
             block_date = _datestr_to_dt(d)
             if block_date is None:
                 continue

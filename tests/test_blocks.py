@@ -5,7 +5,7 @@ import pytest
 import pandas as pd
 from datetime import date
 
-from gtfs_kit import blocks as bk
+from gtfs_kit import blocks as gkb
 
 from .context import DATA_DIR, sample, cairns, cairns_dates, cairns_trip_stats
 
@@ -21,6 +21,6 @@ def test_block_stats():
     dates = feed.get_dates()
     # should have same block_ids in block_stats for same dates
     trips = feed.get_trips(dates[1])
-    bs = bk.compute_block_stats(feed, dates[1])
+    bs = gkb.compute_block_stats(feed, dates[1])
     assert trips['block_id'].nunique() == bs.shape[0]
 

@@ -58,7 +58,18 @@ def compute_block_stats(
         A DataFrame with block IDs as index and columns
         - start_dt: datetime object representing the start time of the block
         - end_dt: datetime object representing the end time of the block
+
+    Notes
+    -----
+    - If you've already computed trip stats in your workflow, then you should pass
+      that table into this function to speed things up significantly.
+    - Raise a KeyError if feed.trips does not contain a block_id column.
+        
     """
+    # Make sure block_id is in trip columns.
+    if 'block_id' not in feed.trips.columns:
+        raise KeyError("Trips feed must contain a block_id column to compute block stats.")
+    
     if trip_stats is None:
         trip_stats = feed.compute_trip_stats()
 
@@ -81,7 +92,9 @@ def compute_block_stats(
         start_dt=("start_dt", "min"), 
         end_dt=("end_dt", "max"),
         duration=("duration", "sum"),
-        distance=("distance", "sum")
+        distance=("distance", "sum"),
+        trip_ids=("trip_id", "unique"),
+        route_ids=("route_id", "unique"),
                  )
     block_stats["speed"] = block_stats["distance"] / block_stats["duration"]
 
@@ -115,18 +128,7 @@ def _compute_block_time_series(
     dr = pd.date_range(start=range_start, end=range_end, freq=freq)
     full_dr = pd.date_range(start=day_start, end=range_end, freq=freq)
 
-    # Count active blocks by hour
-    active_blocks = []
-    for s in dr:
-        e = (s + pd.Timedelta(minutes=1)).ceil(freq)  # use (s)tart and (e)nd of freq
-        ab = block_stats[(block_stats["start_dt"] < e) & (block_stats["end_dt"] >= s)]
-        active_blocks.append(ab.shape[0])
-
-    active_blocks = pd.Series(
-        index=dr, data=active_blocks, name="active_blocks"
-    ).reindex(full_dr, fill_value=0)
-
-    # Count block starts and ends by hour
+    # Count block starts and ends by freq
     block_starts = (
         pd.Series(index=block_stats["start_dt"], data=1, name="block_starts")
         .resample(freq)
@@ -140,6 +142,12 @@ def _compute_block_time_series(
         .count()
         .reindex(full_dr, fill_value=0)
     )
+
+    # Calculate active blocks by freq as cumsum
+    # of difference between block starts and ends
+    active_blocks = block_starts - block_ends.shift(fill_value=0)
+    active_blocks = active_blocks.cumsum()
+    active_blocks.name = 'active_blocks'
 
     return pd.concat([active_blocks, block_starts, block_ends], axis=1)
 

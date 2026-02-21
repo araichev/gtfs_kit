@@ -38,6 +38,8 @@ def compute_block_stats(
     feed: "Feed",
     date: str,
     trip_stats: pd.DataFrame | None = None,
+    as_gdf: bool = False,
+    use_utm: bool = False,
 ) -> pd.DataFrame:
     """
     Compute block start and end times for the given date.
@@ -51,6 +53,10 @@ def compute_block_stats(
     trip_stats : pd.DataFrame | None
         A pre-computed trip stats DataFrame from ``feed.compute_trip_stats()``.
         If ``None``, then it will be computed.
+    as_gdf : bool | None
+        If True and``feed.shapes`` is not ``None``, then return a GeoDataFrame with a geometry column of (Multi)LineStrings, each of which represents the corresponding block's union of trip shapes.
+    use_utm : bool | None    
+        The GeoDataFrame will have a local UTM CRS if ``use_utm``; otherwise it will have CRS WGS84.
 
     Returns
     -------
@@ -61,6 +67,9 @@ def compute_block_stats(
 
     Notes
     -----
+    
+
+
     - If you've already computed trip stats in your workflow, then you should pass
       that table into this function to speed things up significantly.
     - Raise a KeyError if feed.trips does not contain a block_id column.
@@ -69,36 +78,71 @@ def compute_block_stats(
     # Make sure block_id is in trip columns.
     if 'block_id' not in feed.trips.columns:
         raise KeyError("Trips feed must contain a block_id column to compute block stats.")
+
+    final_cols = ['start_dt', 'end_dt', 'duration', 'distance', 'trip_ids', 'route_ids', 'speed']
+    groupby_cols = ['block_id']
     
     if trip_stats is None:
         trip_stats = feed.compute_trip_stats()
 
     # Get relevant trips with connected block_id
     # Add block_ids to trip stats
-    ts = trip_stats.merge(feed.trips[["trip_id", "block_id"]])
-    date_trips = feed.get_trips(date)["trip_id"]
-    ts = ts[ts["trip_id"].isin(date_trips)]
+    trips = feed.get_trips(date=date, as_gdf=as_gdf, use_utm=use_utm) 
+    trips = trips.merge(trip_stats)
 
     # Attach datetimes to trips
     block_date = _datestr_to_dt(date)
     if block_date is None:
-        return pd.DataFrame(columns=["start_dt", "end_dt"])
+        return pd.DataFrame(columns=final_cols)
 
     for time_col, dt_col in [("start_time", "start_dt"), ("end_time", "end_dt")]:
-        ts[dt_col] = ts[time_col].map(lambda x: _timestr_to_dt(x, block_date))
+        trips[dt_col] = trips[time_col].map(lambda x: _timestr_to_dt(x, block_date))
 
-    # Find stats for all blocks
-    block_stats = ts.groupby("block_id").agg(
+    # Find all blocks    
+    f = trips.groupby(groupby_cols).agg(
         start_dt=("start_dt", "min"), 
         end_dt=("end_dt", "max"),
         duration=("duration", "sum"),
         distance=("distance", "sum"),
         trip_ids=("trip_id", "unique"),
         route_ids=("route_id", "unique"),
-                 )
-    block_stats["speed"] = block_stats["distance"] / block_stats["duration"]
+        ).reset_index()
+    f["speed"] = f["distance"] / f["duration"]
 
-    return block_stats
+    if as_gdf:
+        # return geodatframe
+        import shapely.ops as so
+        import geopandas as gpd
+
+        
+        if feed.shapes is None:
+            raise ValueError("This Feed has no shapes.")
+        else:
+            final_cols = f.columns.tolist() + ["geometry"]
+
+        def merge_lines(group):
+            lines = [
+                g
+                for g in group["geometry"]
+                if g and g.geom_type in ["LineString", "MultiLineString"]
+            ]
+            if not lines:
+                return pd.Series({"geometry": None})
+            return pd.Series({"geometry": so.linemerge(lines)})
+
+        f = (
+            trips
+            .filter(groupby_cols + ["geometry"])
+            .groupby(groupby_cols)
+            .apply(merge_lines, include_groups=False)
+            .reset_index()
+            .merge(f, how="right")
+            .pipe(gpd.GeoDataFrame)
+            .set_crs(trips.crs)
+            .filter(final_cols)
+        )
+
+    return f
 
 
 def _compute_block_time_series(
@@ -191,7 +235,7 @@ def compute_block_time_series(
 
     active_block_results = []
     for d in dates:
-        block_stats = compute_block_stats(feed, d, trip_stats)
+        block_stats = compute_block_stats(feed, d, trip_stats).set_index('block_id', drop=True)
         active_blocks = _compute_block_time_series(
             block_stats, freq=freq, block_list=block_list, block_filt=block_filt
         )

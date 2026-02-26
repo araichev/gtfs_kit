@@ -7,6 +7,7 @@ from functools import reduce
 from typing import TYPE_CHECKING, Callable, List
 
 import datetime as dt
+import numpy as np
 import pandas as pd
 
 from . import helpers as hp
@@ -267,3 +268,147 @@ def compute_block_time_series(
     all_active_blocks = all_active_blocks.reindex(dr, fill_value=0)
 
     return all_active_blocks
+
+
+
+
+def compute_block_stats_0(
+    trip_stats: pd.DataFrame,
+    headway_start_time: str = "07:00:00",
+    headway_end_time: str = "19:00:00",
+    *,
+    split_directions: bool = False,
+) -> pd.DataFrame:
+    final_cols = [
+        "block_id",
+        "num_trips",
+        "num_trip_starts",
+        "num_trip_ends",
+        "num_stop_patterns",
+        "start_time",  # HH:MM:SS
+        "end_time",  # HH:MM:SS
+        "max_headway",  # minutes
+        "min_headway",  # minutes
+        "mean_headway",  # minutes
+        "peak_num_trips",
+        "peak_start_time",  # HH:MM:SS
+        "peak_end_time",  # HH:MM:SS
+        "service_distance",
+        "service_duration",  # hours
+        "service_speed",
+        "mean_trip_distance",
+        "mean_trip_duration",
+    ]
+    null_stats = pd.DataFrame(data=[], columns=final_cols)
+
+    # Handle defunct case
+    if trip_stats.empty:
+        return null_stats
+
+    # Remove defunct trips
+    f = trip_stats.loc[lambda x: x["duration"] > 0].copy()
+
+    # Convert trip start and end times to seconds to ease calculations below
+    f[["start_time", "end_time"]] = f[["start_time", "end_time"]].map(
+        hp.timestr_to_seconds
+    )
+
+    headway_start = hp.timestr_to_seconds(headway_start_time)
+    headway_end = hp.timestr_to_seconds(headway_end_time)
+
+    def agg(group):
+        # Take this group of all trips stats for a single block
+        # and compute block-level stats.
+        d = dict()
+        d["num_trips"] = group.shape[0]
+        d["num_trip_starts"] = group["start_time"].count()
+        d["num_trip_ends"] = group.loc[group["end_time"] < 24 * 3600, "end_time"].count()
+        d["num_stop_patterns"] = group["stop_pattern_name"].nunique()
+        d["start_time"] = group["start_time"].min()
+        d["end_time"] = group["end_time"].max()
+
+        # Compute max and mean headway
+        stimes = group["start_time"].values
+        stimes = sorted(
+            [stime for stime in stimes if headway_start <= stime <= headway_end]
+        )
+        headways = np.diff(stimes)
+        if headways.size:
+            d["max_headway"] = np.max(headways) / 60  # minutes
+            d["min_headway"] = np.min(headways) / 60  # minutes
+            d["mean_headway"] = np.mean(headways) / 60  # minutes
+        else:
+            d["max_headway"] = np.nan
+            d["min_headway"] = np.nan
+            d["mean_headway"] = np.nan
+
+        # Compute peak num trips
+        active_trips = hp.get_active_trips_df(group[["start_time", "end_time"]])
+        times, counts = active_trips.index.values, active_trips.values
+        start, end = hp.get_peak_indices(times, counts)
+        d["peak_num_trips"] = counts[start]
+        d["peak_start_time"] = times[start]
+        d["peak_end_time"] = times[end]
+
+        d["service_distance"] = group["distance"].sum()
+        d["service_duration"] = group["duration"].sum()
+
+        return pd.Series(d)
+
+    
+    g = (
+        f.groupby('block_id')
+        .apply(agg, include_groups=False)
+        .reset_index()
+    )
+
+    # Compute a few more stats
+    g["service_speed"] = (
+        g["service_distance"]
+        .div(g["service_duration"])
+        .replace([np.inf, -np.inf], np.nan)
+        .fillna(0.0)
+    )
+    g["mean_trip_distance"] = g["service_distance"] / g["num_trips"]
+    g["mean_trip_duration"] = g["service_duration"] / g["num_trips"]
+
+    # Convert route times to time strings
+    g[["start_time", "end_time", "peak_start_time", "peak_end_time"]] = g[
+        ["start_time", "end_time", "peak_start_time", "peak_end_time"]
+    ].map(lambda x: hp.seconds_to_timestr(x))
+
+    return g.filter(final_cols)
+
+
+def x_compute_block_stats(
+    feed: "Feed",
+    dates: list[str],
+    trip_stats: pd.DataFrame | None = None,
+    headway_start_time: str = "07:00:00",
+    headway_end_time: str = "19:00:00",
+    *,
+    split_directions: bool = False
+) -> pd.DataFrame:
+
+    '''
+    null_stats = compute_route_stats_0(
+        feed.trips.head(0), split_directions=split_directions
+    )
+    final_cols = ["date"] + list(null_stats.columns)
+    null_stats = null_stats.assign(date=None).filter(final_cols)
+    '''
+    
+    null_stats = pd.DateFrame()
+    dates = feed.subset_dates(dates)
+    
+    # Handle defunct case
+    if not dates:
+        return null_stats
+
+    if trip_stats is None:
+        trip_stats = feed.compute_trip_stats()
+        
+    
+
+    
+    return "Hello"

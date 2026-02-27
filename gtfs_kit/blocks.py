@@ -276,8 +276,8 @@ def compute_block_stats_0(
     trip_stats: pd.DataFrame,
     headway_start_time: str = "07:00:00",
     headway_end_time: str = "19:00:00",
-    *,
-    split_directions: bool = False,
+#    *,
+#    split_directions: bool = False,
 ) -> pd.DataFrame:
     final_cols = [
         "block_id",
@@ -380,25 +380,19 @@ def compute_block_stats_0(
     return g.filter(final_cols)
 
 
-def x_compute_block_stats(
+def compute_block_stats(
     feed: "Feed",
     dates: list[str],
     trip_stats: pd.DataFrame | None = None,
     headway_start_time: str = "07:00:00",
     headway_end_time: str = "19:00:00",
-    *,
-    split_directions: bool = False
+    # *,
+    # split_directions: bool = False
 ) -> pd.DataFrame:
 
-    '''
-    null_stats = compute_route_stats_0(
-        feed.trips.head(0), split_directions=split_directions
-    )
+    null_stats = compute_block_stats_0(feed.trips.head(0))
     final_cols = ["date"] + list(null_stats.columns)
     null_stats = null_stats.assign(date=None).filter(final_cols)
-    '''
-    
-    null_stats = pd.DateFrame()
     dates = feed.subset_dates(dates)
     
     # Handle defunct case
@@ -407,8 +401,290 @@ def x_compute_block_stats(
 
     if trip_stats is None:
         trip_stats = feed.compute_trip_stats()
-        
-    
 
+    # Collect stats for each date,
+    # memoizing stats the sequence of trip IDs active on the date
+    # to avoid unnecessary recomputations.
+    # Store in a dictionary of the form
+    # trip ID sequence -> stats DataFrame.
+    stats_by_ids = {}
+    activity = feed.compute_trip_activity(dates)
+    frames = []
+    for date in dates:
+        ids = tuple(sorted(activity.loc[activity[date] > 0, "trip_id"].values))
+        if ids in stats_by_ids:
+            # Reuse stats with updated date
+            stats = stats_by_ids[ids].assign(date=date)
+        elif ids:
+            # Compute stats afresh
+            t = trip_stats.loc[lambda x: x.trip_id.isin(ids)].copy()
+            stats = compute_block_stats_0(
+                t,
+                headway_start_time=headway_start_time,
+                headway_end_time=headway_end_time,
+            ).assign(date=date)
+            # Remember stats
+            stats_by_ids[ids] = stats
+        else:
+            stats = null_stats
+
+        frames.append(stats)
+
+    # Collate stats
+    sort_by = ["date", "block_id"]
+    return pd.concat(frames).filter(final_cols).sort_values(sort_by)
+
+
+def compute_block_time_series_0(
+    trip_stats: pd.DataFrame,
+    date_label: str = "20010101",
+    freq: str = "h",
+    *,
+    split_directions: bool = False,
+) -> pd.DataFrame:
+    """
+    Compute stats in a 24-hour time series form at the given Pandas frequency
+    for the given subset of trip stats of the
+    form output by the function :func:`.trips.compute_trip_stats`.
+
+    Use the given YYYYMMDD date label as the date in the time series index.
+
+    Return a long-format DataFrame with the columns
+
+    - ``datetime``: datetime object
+    - ``block_id``
+    - ``num_trips``: number of trips in service on the block
+      at any time within the time bin
+    - ``num_trip_starts``: number of trips that start within
+      the time bin
+    - ``num_trip_ends``: number of trips that end within the
+      time bin, ignoring trips that end past midnight
+    - ``service_distance``: sum of the service distance accrued
+      during the time bin across all trips on the route;
+      measured in kilometers if ``feed.dist_units`` is metric;
+      otherwise measured in miles;
+    - ``service_duration``: sum of the service duration accrued
+      during the time bin across all trips on the route;
+      measured in hours
+    - ``service_speed``: ``service_distance/service_duration``
+      for the route
+
+
+    Notes
+    -----
+    - Trips that lack start or end times are ignored, so the the
+      aggregate ``num_trips`` across the day could be less than the
+      ``num_trips`` column of :func:`compute_route_stats_0`
+    - All trip departure times are taken modulo 24 hours.
+      So routes with trips that end past 23:59:59 will have all
+      their stats wrap around to the early morning of the time series,
+      except for their ``num_trip_ends`` indicator.
+      Trip endings past 23:59:59 are not binned so that resampling the
+      ``num_trips`` indicator works efficiently.
+    - Note that the total number of trips for two consecutive time bins
+      t1 < t2 is the sum of the number of trips in bin t2 plus the
+      number of trip endings in bin t1.
+      Thus we can downsample the ``num_trips`` indicator by keeping
+      track of only one extra count, ``num_trip_ends``, and can avoid
+      recording individual trip IDs.
+    - All other indicators are downsampled by summing.
+    - Raise a ValueError if ``split_directions`` and no non-null
+      direction ID values present
+
+    """
+    final_cols = [
+        "datetime",
+        "block_id",
+        "num_trips",
+        "num_trip_starts",
+        "num_trip_ends",
+        "service_distance",
+        "service_duration",
+        "service_speed",
+    ]
+
+    null_stats = pd.DataFrame([], columns=final_cols)
+
+    # Handle defunct case
+    if trip_stats.empty:
+        return null_stats
+
+    tss = trip_stats.copy()
     
-    return "Hello"
+    blocks = tss["block_id"].unique()
+
+    # Build a dictionary of time series and then merge them all
+    # at the end.
+    # Assign a uniform generic date for the index
+    indicators = [
+        "num_trip_starts",
+        "num_trip_ends",
+        "num_trips",
+        "service_duration",
+        "service_distance",
+    ]
+
+    # Bin start and end times
+    bins = [i for i in range(24 * 60)]  # One bin for each minute
+    num_bins = len(bins)
+
+    def timestr_to_min(x):
+        return hp.timestr_to_seconds(x, mod24=True) // 60
+
+    tss["start_index"] = tss["start_time"].map(timestr_to_min)
+    tss["end_index"] = tss["end_time"].map(timestr_to_min)
+
+    # Bin each trip according to its start and end time and weight
+    blocks = sorted(tss["block_id"].dropna().unique().tolist())
+    series_by_block_by_indicator = {
+        indicator: {block: [0 for i in range(num_bins)] for block in blocks}
+        for indicator in indicators
+    }
+    for row in tss.itertuples(index=False):
+        block = row.block_id
+        start = row.start_index
+        end = row.end_index
+        distance = row.distance
+
+        # Ignore defunct trips
+        if pd.isna(start) or pd.isna(end) or start == end:
+            continue
+
+        # Get bins to fill
+        if start < end:
+            bins_to_fill = bins[start:end]
+        else:
+            bins_to_fill = bins[start:] + bins[:end]
+
+        # Bin trip and calculate indicators.
+        # Num trip starts.
+        series_by_block_by_indicator["num_trip_starts"][block][start] += 1
+
+        # Num trip ends.
+        # Don't mark trip ends for trips that run past midnight;
+        # allows for easy resampling of num_trips later.
+        if start <= end:
+            series_by_block_by_indicator["num_trip_ends"][block][end] += 1
+
+        # Do rest of indicators
+        for indicator in indicators[2:]:
+            if indicator == "num_trips":
+                weight = 1
+            elif indicator == "service_duration":
+                weight = 1 / 60
+            else:
+                weight = distance / len(bins_to_fill)
+            for b in bins_to_fill:
+                series_by_block_by_indicator[indicator][block][b] += weight
+
+    # Build per-indicator DataFrames indexed by minute across the provided date
+    rng = pd.date_range(
+        pd.to_datetime(f"{date_label} 00:00:00"), periods=24 * 60, freq="Min"
+    )
+    series_by_indicator = {
+        indicator: pd.DataFrame(
+            series_by_block_by_indicator[indicator], index=rng
+        ).fillna(0)
+        for indicator in indicators
+    }
+
+    # Combine into a single long-form time series per block (and direction if requested);
+    # hp.combine_time_series is expected to compute derived fields like service_speed
+    g = hp.combine_time_series(
+        series_by_indicator, kind="block"
+    )
+    # Downsample to requested frequency (sum for counts/durations/distances; speed handled by helper)
+    breakpoint()
+    return hp.downsample(g, freq=freq)
+
+
+def compute_block_time_series(
+    feed: "Feed",
+    dates: list[str],
+    trip_stats: pd.DataFrame | None = None,
+    freq: str = "h",
+    # *,
+    # split_directions: bool = False,
+) -> pd.DataFrame:
+    """
+    Compute block stats in time series form for the trips that lie in
+    the trip stats subset, which defaults to the output of
+    :func:`.trips.compute_trip_stats`, and that start on the given dates
+    (YYYYMMDD date strings).
+
+    Specify the time series frequency with a Pandas frequency string, e.g. ``'5Min'``.
+
+    Return a time series DataFrame with the following columns.
+
+    - ``datetime``: datetime object
+    - ``block_id``
+    - ``num_trips``: number of trips in service on the block
+      at any time within the time bin
+    - ``num_trip_starts``: number of trips that start within
+      the time bin
+    - ``num_trip_ends``: number of trips that end within the
+      time bin, ignoring trips that end past midnight
+    - ``service_distance``: sum of the service distance accrued
+      during the time bin across all trips on the block;
+      measured in kilometers if ``feed.dist_units`` is metric;
+      otherwise measured in miles;
+    - ``service_duration``: sum of the service duration accrued
+      during the time bin across all trips on the block;
+      measured in hours
+    - ``service_speed``: ``service_distance/service_duration``
+      for the block
+
+    Exclude dates that lie outside of the Feed's date range.
+    If all dates lie outside the Feed's date range, then return an
+    empty DataFrame.
+
+    Notes
+    -----
+    - If you've already computed trip stats in your workflow, then you should pass
+      that table into this function to speed things up significantly.
+    - See the notes for :func:`compute_block_time_series_0`
+    - Raise a ValueError if ``split_directions`` and no non-null
+      direction ID values present
+
+    """
+    dates = feed.subset_dates(dates)
+    null_stats = compute_block_time_series_0(pd.DataFrame())
+
+    # Handle defunct case
+    if not dates:
+        return null_stats
+
+    activity = feed.compute_trip_activity(dates)
+    if trip_stats is None:
+        trip_stats = feed.compute_trip_stats()
+    else:
+        trip_stats = trip_stats.copy()
+
+    # Collect stats for each date, memoizing stats by trip ID sequence
+    # to avoid unnecessary re-computations.
+    # Store in dictionary of the form
+    # trip ID sequence -> stats table
+    null_stats = pd.DataFrame()
+    stats_by_ids = {}
+    activity = feed.compute_trip_activity(dates)
+    frames = []
+    for date in dates:
+        ids = tuple(sorted(activity.loc[activity[date] > 0, "trip_id"].values))
+        if ids in stats_by_ids:
+            # Reuse stats with updated date
+            stats = stats_by_ids[ids].pipe(hp.replace_date, date=date)
+        elif ids:
+            # Compute stats afresh
+            t = trip_stats.loc[lambda x: x.trip_id.isin(ids)].copy()
+            stats = compute_block_time_series_0(
+                t, freq=freq, date_label=date
+            ).pipe(hp.replace_date, date=date)
+            # Remember stats
+            stats_by_ids[ids] = stats
+        else:
+            stats = null_stats
+
+        frames.append(stats)
+
+    # Collate stats
+    return pd.concat(frames, ignore_index=True)

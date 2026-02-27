@@ -115,6 +115,7 @@ def test_compute_trip_stats():
             "route_type",
             "shape_id",
             "stop_pattern_name",
+            "block_id",
             "num_stops",
             "start_time",
             "end_time",

@@ -287,7 +287,7 @@ def get_active_trips_df(trip_times: pd.DataFrame) -> pd.Series:
 def combine_time_series(
     series_by_indicator: dict[str, pd.DataFrame],
     *,
-    kind: Literal["route", "stop"],
+    kind: Literal["route", "stop", "block"],
     split_directions: bool = False,
 ) -> pd.DataFrame:
     """
@@ -295,7 +295,7 @@ def combine_time_series(
     into a single long-form time series with columns
 
     - ``'datetime'``
-    - ``'route_id'`` or ``'stop_id'``: depending on ``kind``
+    - ``'route_id'`` or ``'stop_id'`` or ``'block_id'``: depending on ``kind``
     - ``'direction_id'``: present if and only if ``split_directions``
     - one column per indicator provided in `series_by_indicator`
     - ``'service_speed'``: if both ``service_distance`` and ``service_duration`` present
@@ -323,7 +323,12 @@ def combine_time_series(
                 "All indicator DataFrames must share the same DatetimeIndex."
             )
 
-    entity_col = "route_id" if kind == "route" else "stop_id"
+    if kind == "route":
+        entity_col = "route_id"
+    elif kind == "stop":
+        entity_col = "stop_id"
+    else:
+        entity_col = "block_id"
 
     # Wide to long for each indicator
     long_frames: list[pd.DataFrame] = []
@@ -420,7 +425,7 @@ def downsample(time_series: pd.DataFrame, freq: str) -> pd.DataFrame:
         return f
 
     # Handle generic case
-    id_cols = list({"route_id", "stop_id", "direction_id", "route_type"} & set(f.columns))
+    id_cols = list({"route_id", "stop_id", "direction_id", "route_type", "block_id"} & set(f.columns))
 
     if not id_cols:
         # Network time series without route type

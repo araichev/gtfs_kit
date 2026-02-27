@@ -284,12 +284,8 @@ def compute_trip_stats(
     # Merge with stop times and extra trip info.
     # Convert departure times to seconds past midnight to
     # compute trip durations later.
-    if "direction_id" not in f.columns:
-        f["direction_id"] = np.nan
-    if "shape_id" not in f.columns:
-        f["shape_id"] = np.nan
-    if "block_id" not in f.columns:
-        f["block_id"] = np.nan
+    for id_col in ['direction_id', 'shape_id', 'block_id', 'service_id']:
+        if id_col not in f.columns: f[id_col] = np.nan
 
     f = (
         f[["route_id", "trip_id", "direction_id", "shape_id", "stop_pattern_name", "block_id"]]

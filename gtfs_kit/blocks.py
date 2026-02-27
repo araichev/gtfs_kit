@@ -35,7 +35,7 @@ def _timestr_to_dt(x: str, date: dt.date) -> dt.datetime:
     return dt.datetime.combine(date, dt.time()) + dt.timedelta(seconds=s)
 
 
-def compute_block_stats(
+def get_block_service_info(
     feed: "Feed",
     date: str,
     trip_stats: pd.DataFrame | None = None,
@@ -43,7 +43,7 @@ def compute_block_stats(
     use_utm: bool = False,
 ) -> pd.DataFrame:
     """
-    Compute block start and end times for the given date.
+    Retrieve block service info for a given date.
 
     Parameters
     ----------
@@ -65,6 +65,11 @@ def compute_block_stats(
         A DataFrame with block IDs as index and columns
         - start_dt: datetime object representing the start time of the block
         - end_dt: datetime object representing the end time of the block
+        - duration: block duration
+        - distance: block distance
+        - trip_ids: list of trips performed by the block
+        - route_ids: list of routes performed by the block
+        - speed: average speed of block service
 
     Notes
     -----
@@ -99,7 +104,9 @@ def compute_block_stats(
     for time_col, dt_col in [("start_time", "start_dt"), ("end_time", "end_dt")]:
         trips[dt_col] = trips[time_col].map(lambda x: _timestr_to_dt(x, block_date))
 
-    # Find all blocks    
+    trips = trips.sort_values('start_dt')
+
+    # Aggregate service info by block    
     f = trips.groupby(groupby_cols).agg(
         start_dt=("start_dt", "min"), 
         end_dt=("end_dt", "max"),
@@ -146,7 +153,7 @@ def compute_block_stats(
     return f
 
 
-def _compute_block_time_series(
+def compute_block_service_time_series_0(
     block_stats: pd.DataFrame,
     freq: str = "h",
     block_list: list[str] | None = None,
@@ -197,7 +204,7 @@ def _compute_block_time_series(
     return pd.concat([active_blocks, block_starts, block_ends], axis=1)
 
 
-def compute_block_time_series(
+def compute_block_service_time_series(
     feed: "Feed",
     dates: list[str],
     freq: str,
@@ -237,7 +244,7 @@ def compute_block_time_series(
     active_block_results = []
     for d in dates:
         block_stats = compute_block_stats(feed, d, trip_stats).set_index('block_id', drop=True)
-        active_blocks = _compute_block_time_series(
+        active_blocks = compute_block_service_time_series_0(
             block_stats, freq=freq, block_list=block_list, block_filt=block_filt
         )
         if active_blocks.shape[0]:
@@ -270,7 +277,91 @@ def compute_block_time_series(
     return all_active_blocks
 
 
+def get_blocks(
+    feed: "Feed",
+    date: str | None = None,
+    time: str | None = None,
+    *,
+    as_gdf: bool = False,
+    use_utm: bool = False,
+    include_date: bool = False
+) -> pd.DataFrame:
+    """
+    Return a set of service blocks for a given data.
+    If a YYYYMMDD date string is given, then restrict routes to only those active on
+    the date.
+    If a HH:MM:SS time string is given, possibly with HH > 23, then restrict routes
+    to only those active during the time.
 
+    Given a Feed, return a GeoDataFrame with all the columns of ``feed.routes``
+    plus a geometry column of (Multi)LineStrings, each of which represents the
+    corresponding routes's shape.
+
+    If ``as_gdf`` and ``feed.shapes`` is not ``None``,
+    then return a GeoDataFrame with all the columns of ``feed.routes``
+    plus a geometry column of (Multi)LineStrings, each of which represents the
+    corresponding routes's union of trip shapes.
+    The GeoDataFrame will have a local UTM CRS if ``use_utm``; otherwise it will have
+    CRS WGS84.
+    If ``split_directions`` and ``as_gdf``, then add the column ``direction_id`` and
+    split each route into the union of its direction 0 shapes
+    and the union of its direction 1 shapes.
+    If ``as_gdf`` and ``feed.shapes`` is ``None``, then raise a ValueError.
+    """
+    from .trips import get_trips
+
+    if (not date) and include_date: raise ValueError("Must specify a date to include service date in result")
+
+    trips = get_trips(feed, date=date, time=time, as_gdf=as_gdf, use_utm=use_utm)
+
+    # by default only return block_id and service_id, the only standard included block info
+    final_cols = ["block_id", "service_id"]
+    if not as_gdf:
+        f = trips[final_cols].drop_duplicates(ignore_index=True) 
+
+    
+    else:
+        if feed.shapes is None:
+            raise ValueError("This Feed has no shapes.")
+
+        import shapely.ops as so
+        import geopandas as gpd
+        
+        groupby_cols = ["block_id", "service_id"]
+        final_cols += ["geometry"]
+
+        def merge_lines(group):
+            lines = [
+                g
+                for g in group["geometry"]
+                if g and g.geom_type in ["LineString", "MultiLineString"]
+            ]
+            if not lines:
+                return pd.Series({"geometry": None})
+            return pd.Series({"geometry": so.linemerge(lines)})
+
+        f = (
+            trips
+            # Not dropping unnecessary duplicate shapes as there may be shared geometries between blocks
+            #.drop_duplicates(subset=["shape_id", "route_id"])
+            .filter(groupby_cols + ["geometry"])
+            .groupby(groupby_cols)
+            .apply(merge_lines, include_groups=False)
+            .reset_index()
+            # .merge(f, how="right")
+            .pipe(gpd.GeoDataFrame)
+            .set_crs(trips.crs)
+            .filter(final_cols)
+        )
+
+    if include_date: 
+        final_cols += ['date']
+        f['date'] = date
+
+    return f
+
+
+    
 
 def compute_block_stats_0(
     trip_stats: pd.DataFrame,

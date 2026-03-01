@@ -525,13 +525,13 @@ def compute_block_stats(
     sort_by = ["date", "block_id"]
     return pd.concat(frames).filter(final_cols).sort_values(sort_by)
 
-
 def compute_block_time_series_0(
     trip_stats: pd.DataFrame,
     date_label: str = "20010101",
     freq: str = "h",
     *,
     split_directions: bool = False,
+    active_blocks: bool = False,
 ) -> pd.DataFrame:
     """
     Compute stats in a 24-hour time series form at the given Pandas frequency
@@ -631,6 +631,10 @@ def compute_block_time_series_0(
         indicator: {block: [0 for i in range(num_bins)] for block in blocks}
         for indicator in indicators
     }
+    # Create separate indicator for active blocks; this is filled on a by block, rather than by trip, basis.
+    if active_blocks:
+        series_by_block_by_indicator['is_active'] = {block: [0 for i in range(num_bins)] for block in blocks}
+    
     for row in tss.itertuples(index=False):
         block = row.block_id
         start = row.start_index
@@ -668,6 +672,32 @@ def compute_block_time_series_0(
             for b in bins_to_fill:
                 series_by_block_by_indicator[indicator][block][b] += weight
 
+    if active_blocks:
+        indicator = 'is_active'
+        indicators.append(indicator)
+        
+        bss = compute_block_stats_0(tss)
+        bss["start_index"] = bss["start_time"].map(timestr_to_min)
+        bss["end_index"] = bss["end_time"].map(timestr_to_min)
+        for row in bss.itertuples(index=False):
+            block = row.block_id
+            start = row.start_index
+            end = row.end_index
+    
+            # Ignore defunct trips
+            if pd.isna(start) or pd.isna(end) or start == end:
+                continue
+    
+            # Get bins to fill
+            if start < end:
+                bins_to_fill = bins[start:end]
+            else:
+                bins_to_fill = bins[start:] + bins[:end]
+            
+            for b in bins_to_fill:
+                series_by_block_by_indicator[indicator][block][b] += 1
+        
+
     # Build per-indicator DataFrames indexed by minute across the provided date
     rng = pd.date_range(
         pd.to_datetime(f"{date_label} 00:00:00"), periods=24 * 60, freq="Min"
@@ -682,11 +712,14 @@ def compute_block_time_series_0(
     # Combine into a single long-form time series per block (and direction if requested);
     # hp.combine_time_series is expected to compute derived fields like service_speed
     g = hp.combine_time_series(
-        series_by_indicator, kind="block"
+        series_by_indicator, kind="block", active_blocks=active_blocks
     )
     # Downsample to requested frequency (sum for counts/durations/distances; speed handled by helper)
     breakpoint()
-    return hp.downsample(g, freq=freq)
+    ds = hp.downsample(g, freq=freq, active_blocks=active_blocks)
+    # is_active is a boolean indicator
+    if active_blocks: ds['is_active'] = ds['is_active'].apply(bool)
+    return ds
 
 
 def compute_block_time_series(
@@ -694,6 +727,7 @@ def compute_block_time_series(
     dates: list[str],
     trip_stats: pd.DataFrame | None = None,
     freq: str = "h",
+    active_blocks: bool = False
     # *,
     # split_directions: bool = False,
 ) -> pd.DataFrame:
@@ -768,7 +802,7 @@ def compute_block_time_series(
             # Compute stats afresh
             t = trip_stats.loc[lambda x: x.trip_id.isin(ids)].copy()
             stats = compute_block_time_series_0(
-                t, freq=freq, date_label=date
+                t, freq=freq, date_label=date, active_blocks=active_blocks
             ).pipe(hp.replace_date, date=date)
             # Remember stats
             stats_by_ids[ids] = stats

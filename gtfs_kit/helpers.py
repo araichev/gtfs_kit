@@ -289,6 +289,7 @@ def combine_time_series(
     *,
     kind: Literal["route", "stop", "block"],
     split_directions: bool = False,
+    active_blocks: bool = False,
 ) -> pd.DataFrame:
     """
     Combine a dict of wide time series (one DataFrame per indicator, columns are entities)
@@ -393,10 +394,11 @@ def combine_time_series(
         "service_distance",
         "service_speed",
     ]
+    if active_blocks: cols.append('is_active')
     return f.filter(cols).sort_values(cols0, ignore_index=True)
 
 
-def downsample(time_series: pd.DataFrame, freq: str) -> pd.DataFrame:
+def downsample(time_series: pd.DataFrame, freq: str, active_blocks: bool=False) -> pd.DataFrame:
     """
     Downsample the given stop, route,  or network time series,
     (outputs of :func:`.stops.compute_stop_time_series`,
@@ -446,6 +448,7 @@ def downsample(time_series: pd.DataFrame, freq: str) -> pd.DataFrame:
             "service_duration",
             "service_speed",
         ]
+        if active_blocks: indicators.append('is_active')
 
     def agg_num_trips(g):
         """

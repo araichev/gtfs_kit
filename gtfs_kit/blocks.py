@@ -16,267 +16,6 @@ from . import helpers as hp
 if TYPE_CHECKING:
     from .feed import Feed
 
-
-def _datestr_to_dt(x: str | None, format_str: str = "%Y%m%d") -> dt.date | None:
-    """
-    Convert a date string to a datetime.date.
-    Return ``None`` if ``x is None``.
-    """
-    if x is None:
-        return None
-    return dt.datetime.strptime(x, format_str).date()
-
-
-def _timestr_to_dt(x: str, date: dt.date) -> dt.datetime:
-    """
-    Convert a time string and a date to a datetime object.
-    """
-    s = hp.timestr_to_seconds(x, mod24=True)
-    return dt.datetime.combine(date, dt.time()) + dt.timedelta(seconds=s)
-
-
-def get_block_service_info(
-    feed: "Feed",
-    date: str,
-    trip_stats: pd.DataFrame | None = None,
-    as_gdf: bool = False,
-    use_utm: bool = False,
-) -> pd.DataFrame:
-    """
-    Retrieve block service info for a given date.
-
-    Parameters
-    ----------
-    feed : Feed
-        A GTFS-Kit feed object.
-    date : str
-        A YYYYMMDD date string.
-    trip_stats : pd.DataFrame | None
-        A pre-computed trip stats DataFrame from ``feed.compute_trip_stats()``.
-        If ``None``, then it will be computed.
-    as_gdf : bool | None
-        If True and``feed.shapes`` is not ``None``, then return a GeoDataFrame with a geometry column of (Multi)LineStrings, each of which represents the corresponding block's union of trip shapes.
-    use_utm : bool | None    
-        The GeoDataFrame will have a local UTM CRS if ``use_utm``; otherwise it will have CRS WGS84.
-
-    Returns
-    -------
-    pd.DataFrame
-        A DataFrame with block IDs as index and columns
-        - start_dt: datetime object representing the start time of the block
-        - end_dt: datetime object representing the end time of the block
-        - duration: block duration
-        - distance: block distance
-        - trip_ids: list of trips performed by the block
-        - route_ids: list of routes performed by the block
-        - speed: average speed of block service
-
-    Notes
-    -----
-    
-
-
-    - If you've already computed trip stats in your workflow, then you should pass
-      that table into this function to speed things up significantly.
-    - Raise a KeyError if feed.trips does not contain a block_id column.
-        
-    """
-    # Make sure block_id is in trip columns.
-    if 'block_id' not in feed.trips.columns:
-        raise KeyError("Trips feed must contain a block_id column to compute block stats.")
-
-    final_cols = ['start_dt', 'end_dt', 'duration', 'distance', 'trip_ids', 'route_ids', 'speed']
-    groupby_cols = ['block_id']
-    
-    if trip_stats is None:
-        trip_stats = feed.compute_trip_stats()
-
-    # Get relevant trips with connected block_id
-    # Add block_ids to trip stats
-    trips = feed.get_trips(date=date, as_gdf=as_gdf, use_utm=use_utm) 
-    trips = trips.merge(trip_stats)
-
-    # Attach datetimes to trips
-    block_date = _datestr_to_dt(date)
-    if block_date is None:
-        return pd.DataFrame(columns=final_cols)
-
-    for time_col, dt_col in [("start_time", "start_dt"), ("end_time", "end_dt")]:
-        trips[dt_col] = trips[time_col].map(lambda x: _timestr_to_dt(x, block_date))
-
-    trips = trips.sort_values('start_dt')
-
-    # Aggregate service info by block    
-    f = trips.groupby(groupby_cols).agg(
-        start_dt=("start_dt", "min"), 
-        end_dt=("end_dt", "max"),
-        duration=("duration", "sum"),
-        distance=("distance", "sum"),
-        trip_ids=("trip_id", "unique"),
-        route_ids=("route_id", "unique"),
-        ).reset_index()
-    f["speed"] = f["distance"] / f["duration"]
-
-    if as_gdf:
-        # return geodatframe
-        import shapely.ops as so
-        import geopandas as gpd
-
-        
-        if feed.shapes is None:
-            raise ValueError("This Feed has no shapes.")
-        else:
-            final_cols = f.columns.tolist() + ["geometry"]
-
-        def merge_lines(group):
-            lines = [
-                g
-                for g in group["geometry"]
-                if g and g.geom_type in ["LineString", "MultiLineString"]
-            ]
-            if not lines:
-                return pd.Series({"geometry": None})
-            return pd.Series({"geometry": so.linemerge(lines)})
-
-        f = (
-            trips
-            .filter(groupby_cols + ["geometry"])
-            .groupby(groupby_cols)
-            .apply(merge_lines, include_groups=False)
-            .reset_index()
-            .merge(f, how="right")
-            .pipe(gpd.GeoDataFrame)
-            .set_crs(trips.crs)
-            .filter(final_cols)
-        )
-
-    return f
-
-
-def compute_block_service_time_series_0(
-    block_stats: pd.DataFrame,
-    freq: str = "h",
-    block_list: list[str] | None = None,
-    block_filt: Callable | None = None,
-) -> pd.DataFrame:
-    """
-    Helper function for ``active_blocks_by_freq``.
-    """
-    if block_list:  # filter for list of blocks
-        block_stats = block_stats[block_stats.index.isin(block_list)]
-    if block_filt:  # filter blocks using function
-        block_stats = block_stats[list(map(block_filt, block_stats.index))]
-
-    # Return none if no blocks in block times
-    if not block_stats.shape[0]:
-        return pd.DataFrame(columns=["active_blocks", "block_starts", "block_ends"])
-
-    # Create dt index to check for active blocks
-    first_block = pd.Timestamp(block_stats["start_dt"].min())
-    last_block = pd.Timestamp(block_stats["end_dt"].max())
-    day_start = first_block.floor("1D")
-    range_start = first_block.floor(freq)
-    range_end = last_block.ceil(freq)
-    dr = pd.date_range(start=range_start, end=range_end, freq=freq)
-    full_dr = pd.date_range(start=day_start, end=range_end, freq=freq)
-
-    # Count block starts and ends by freq
-    block_starts = (
-        pd.Series(index=block_stats["start_dt"], data=1, name="block_starts")
-        .resample(freq)
-        .count()
-        .reindex(full_dr, fill_value=0)
-    )
-
-    block_ends = (
-        pd.Series(index=block_stats["end_dt"], data=1, name="block_ends")
-        .resample(freq)
-        .count()
-        .reindex(full_dr, fill_value=0)
-    )
-
-    # Calculate active blocks by freq as cumsum
-    # of difference between block starts and ends
-    active_blocks = block_starts - block_ends.shift(fill_value=0)
-    active_blocks = active_blocks.cumsum()
-    active_blocks.name = 'active_blocks'
-
-    return pd.concat([active_blocks, block_starts, block_ends], axis=1)
-
-
-def compute_block_service_time_series(
-    feed: "Feed",
-    dates: list[str],
-    freq: str,
-    trip_stats: pd.DataFrame | None = None,
-    block_list: list[str] | None = None,
-    block_filt: Callable | None = None,
-) -> pd.DataFrame:
-    """
-    Compute the number of active blocks, block starts, and block ends for a given
-    list of dates, aggregated by a given frequency.
-
-    Parameters
-    ----------
-    feed : Feed
-        A GTFS-Kit feed object.
-    dates : list[str]
-        A list of YYYYMMDD date strings.
-    freq : str
-        A Pandas frequency string, e.g. 'h' for hourly.
-    trip_stats : pd.DataFrame | None
-        A pre-computed trip stats DataFrame from ``feed.compute_trip_stats()``.
-        If ``None``, then it will be computed.
-    block_list : list | None
-        A list of block IDs to filter for.
-    block_filt : Callable | None
-        A function to filter block IDs. For example, ``lambda x: x.startswith('a')``
-
-    Returns
-    -------
-    pd.DataFrame
-        A DataFrame with a DatetimeIndex and columns
-        - active_blocks: number of blocks active during the time period
-        - block_starts: number of blocks that started during the time period
-        - block_ends: number of blocks that ended during the time period
-    """
-
-    active_block_results = []
-    for d in dates:
-        block_stats = compute_block_stats(feed, d, trip_stats).set_index('block_id', drop=True)
-        active_blocks = compute_block_service_time_series_0(
-            block_stats, freq=freq, block_list=block_list, block_filt=block_filt
-        )
-        if active_blocks.shape[0]:
-            active_block_results.append(active_blocks)
-        else: 
-            # create empty results if no blocks
-            block_date = _datestr_to_dt(d)
-            if block_date is None:
-                continue
-            empty_dt = pd.Timestamp(block_date)
-            columns = ["active_blocks", "block_starts", "block_ends"]
-            index = pd.date_range(
-                start=empty_dt, end=empty_dt + pd.Timedelta(days=1), freq=freq
-            )
-            empty_df = pd.DataFrame(index=index, columns=columns, data=0)
-            active_block_results.append(empty_df)
-
-    if not active_block_results:
-        return pd.DataFrame(columns=["active_blocks", "block_starts", "block_ends"])
-
-    all_active_blocks = reduce(lambda a, b: a.add(b, fill_value=0), active_block_results)
-
-    # Fill in any missing periods
-    dr = pd.date_range(
-        start=all_active_blocks.index.min(), end=all_active_blocks.index.max(), freq=freq
-    )
-
-    all_active_blocks = all_active_blocks.reindex(dr, fill_value=0)
-
-    return all_active_blocks
-
-
 def get_blocks(
     feed: "Feed",
     date: str | None = None,
@@ -287,15 +26,19 @@ def get_blocks(
     include_date: bool = False
 ) -> pd.DataFrame:
     """
-    Return a set of service blocks for a given data.
+    Return a set of service blocks for a given data feed.
     If a YYYYMMDD date string is given, then restrict routes to only those active on
     the date.
     If a HH:MM:SS time string is given, possibly with HH > 23, then restrict routes
     to only those active during the time.
 
-    Given a Feed, return a GeoDataFrame with all the columns of ``feed.routes``
-    plus a geometry column of (Multi)LineStrings, each of which represents the
-    corresponding routes's shape.
+    Given a Feed, return a GeoDataFrame with the columns "block_id" and "service_id". 
+    These columns represent unique block info from feed.trips. 
+    
+    If "as_gdf" is specified, also return a geometry column of (Multi)LineStrings, each of 
+    which represents the corresponding block's shape.
+    If "include_date" is specified, also return a column of the block service date. This
+    is intended to ease data merging.
 
     If ``as_gdf`` and ``feed.shapes`` is not ``None``,
     then return a GeoDataFrame with all the columns of ``feed.routes``
@@ -310,12 +53,15 @@ def get_blocks(
     """
     from .trips import get_trips
 
-    if (not date) and include_date: raise ValueError("Must specify a date to include service date in result")
+    if (not date) and include_date:
+        raise ValueError("Must specify a date to include service date in result")
 
     trips = get_trips(feed, date=date, time=time, as_gdf=as_gdf, use_utm=use_utm)
 
     # by default only return block_id and service_id, the only standard included block info
     final_cols = ["block_id", "service_id"]
+    if not set(final_cols).issubset(set(feed.trips.columns)):
+        raise ValueError("This Feed has no block data.")
     if not as_gdf:
         f = trips[final_cols].drop_duplicates(ignore_index=True) 
 
@@ -359,17 +105,68 @@ def get_blocks(
         f['date'] = date
 
     return f
-
-
     
 
 def compute_block_stats_0(
     trip_stats: pd.DataFrame,
     headway_start_time: str = "07:00:00",
     headway_end_time: str = "19:00:00",
-#    *,
-#    split_directions: bool = False,
 ) -> pd.DataFrame:
+    """
+    Compute stats for the given subset of trips stats of the form output by the
+    function :func:`.trips.compute_trip_stats`.
+    Ignore trips with zero duration.
+
+    Return a DataFrame with the columns
+
+    - ``'block_id'``
+    - ``'num_trips'``: number of trips on the block in the subset
+    - ``'num_trip_starts'``: number of trips on the block with
+      nonnull start times
+    - ``'num_trip_ends'``: number of trips on the block with nonnull
+      end times that end before 23:59:59
+    - ``'num_stop_patterns'``: number of stop pattern across trips
+    - ``'is_loop'``: 1 if at least one of the trips on the block has
+      its ``is_loop`` field equal to 1; 0 otherwise
+    - ``'start_time'``: start time of the earliest trip on the block
+    - ``'end_time'``: end time of latest trip on the block
+    - ``'max_headway'``: maximum of the durations (in minutes)
+      between trip starts on the block between
+      ``headway_start_time`` and ``headway_end_time`` on the given
+      dates
+    - ``'min_headway'``: minimum of the durations (in minutes)
+      mentioned above
+    - ``'mean_headway'``: mean of the durations (in minutes)
+      mentioned above
+    - ``'peak_num_trips'``: maximum number of simultaneous trips in
+      service (for the given direction, or for both directions when
+      ``split_directions==False``)
+    - ``'peak_start_time'``: start time of first longest period
+      during which the peak number of trips occurs
+    - ``'peak_end_time'``: end time of first longest period during
+      which the peak number of trips occurs
+    - ``'service_duration'``: total of the duration of each trip on
+      the block in the given subset of trips; measured in hours
+    - ``'service_distance'``: total of the distance traveled by each
+      trip on the block in the given subset of trips;
+      measured in kilometers if ``feed.dist_units`` is metric;
+      otherwise measured in miles;
+      contains all ``np.nan`` entries if ``feed.shapes is None``
+    - ``'service_speed'``: service_distance/service_duration when defined; 0 otherwise
+    - ``'mean_trip_distance'``: service_distance/num_trips
+    - ``'mean_trip_duration'``: service_duration/num_trips
+
+    If ``trip_stats`` is empty, return an empty DataFrame.
+
+    Unlike routes, blocks are not bidirectional, and encompass a set
+    order of trips for each unique block_id/service_id pair. For headways, 
+    (1) compute max headway by taking the max of the
+    max headways in both directions; (2) compute mean headway by
+    taking the weighted mean of the mean headways in both
+    directions.
+    """
+
+
     final_cols = [
         "block_id",
         "num_trips",
@@ -395,6 +192,10 @@ def compute_block_stats_0(
     # Handle defunct case
     if trip_stats.empty:
         return null_stats
+
+    # confirm block_id column has valid values
+    if trip_stats['block_id'].isna().all():
+        raise ValueError('Cannot compute without valid block_id values in feed.trips.')
 
     # Remove defunct trips
     f = trip_stats.loc[lambda x: x["duration"] > 0].copy()
@@ -463,7 +264,7 @@ def compute_block_stats_0(
     g["mean_trip_distance"] = g["service_distance"] / g["num_trips"]
     g["mean_trip_duration"] = g["service_duration"] / g["num_trips"]
 
-    # Convert route times to time strings
+    # Convert block times to time strings
     g[["start_time", "end_time", "peak_start_time", "peak_end_time"]] = g[
         ["start_time", "end_time", "peak_start_time", "peak_end_time"]
     ].map(lambda x: hp.seconds_to_timestr(x))
@@ -480,6 +281,75 @@ def compute_block_stats(
     # *,
     # split_directions: bool = False
 ) -> pd.DataFrame:
+    """
+    Compute block stats for all the trips that lie in the given subset
+    of trip stats, which defaults to ``feed.compute_trip_stats()``,
+    and that start on the given dates (YYYYMMDD date strings).
+
+    If ``split_directions``, then separate the stats by trip direction (0 or 1).
+    Use the headway start and end times to specify the time period for computing
+    headway stats.
+
+    Return a DataFrame with the columns
+
+    - ``'date'``
+    - ``'block_id'``
+    - ``'num_trips'``: number of trips on the block in the subset
+    - ``'num_trip_starts'``: number of trips on the block with
+      nonnull start times
+    - ``'num_trip_ends'``: number of trips on the block with nonnull
+      end times that end before 23:59:59
+    - ``'num_stop_patterns'``: number of stop pattern across trips
+    - ``'is_loop'``: 1 if at least one of the trips on the block has
+      its ``is_loop`` field equal to 1; 0 otherwise
+    - ``'start_time'``: start time of the earliest trip on the block
+    - ``'end_time'``: end time of latest trip on the block
+    - ``'max_headway'``: maximum of the durations (in minutes)
+      between trip starts on the block between
+      ``headway_start_time`` and ``headway_end_time`` on the given
+      dates
+    - ``'min_headway'``: minimum of the durations (in minutes)
+      mentioned above
+    - ``'mean_headway'``: mean of the durations (in minutes)
+      mentioned above
+    - ``'peak_num_trips'``: maximum number of simultaneous trips in
+      service (for the given direction, or for both directions when
+      ``split_directions==False``)
+    - ``'peak_start_time'``: start time of first longest period
+      during which the peak number of trips occurs
+    - ``'peak_end_time'``: end time of first longest period during
+      which the peak number of trips occurs
+    - ``'service_duration'``: total of the duration of each trip on
+      the block in the given subset of trips; measured in hours
+    - ``'service_distance'``: total of the distance traveled by each
+      trip on the block in the given subset of trips;
+      measured in kilometers if ``feed.dist_units`` is metric;
+      otherwise measured in miles;
+      contains all ``np.nan`` entries if ``feed.shapes is None``
+    - ``'service_speed'``: service_distance/service_duration when defined; 0 otherwise
+    - ``'mean_trip_distance'``: service_distance/num_trips
+    - ``'mean_trip_duration'``: service_duration/num_trips
+
+
+    Exclude dates with no active trips, which could yield the empty DataFrame.
+
+    Unlike routes, blocks are not bidirectional, and encompass a set
+    order of trips for each unique block_id/service_id pair. For headways, 
+    (1) compute max headway by taking the max of the
+    max headways in both directions; (2) compute mean headway by
+    taking the weighted mean of the mean headways in both
+    directions.
+
+    Notes
+    -----
+    - If you've already computed trip stats in your workflow, then you should pass
+      that table into this function to speed things up significantly.
+    - The block stats for date d contain stats for trips that start on
+      date d only and ignore trips that start on date d-1 and end on
+      date d.
+
+    """
+
 
     null_stats = compute_block_stats_0(feed.trips.head(0))
     final_cols = ["date"] + list(null_stats.columns)
@@ -530,7 +400,6 @@ def compute_block_time_series_0(
     date_label: str = "20010101",
     freq: str = "h",
     *,
-    split_directions: bool = False,
     active_blocks: bool = False,
 ) -> pd.DataFrame:
     """
@@ -551,7 +420,7 @@ def compute_block_time_series_0(
     - ``num_trip_ends``: number of trips that end within the
       time bin, ignoring trips that end past midnight
     - ``service_distance``: sum of the service distance accrued
-      during the time bin across all trips on the route;
+      during the time bin across all trips on the block;
       measured in kilometers if ``feed.dist_units`` is metric;
       otherwise measured in miles;
     - ``service_duration``: sum of the service duration accrued
@@ -560,14 +429,16 @@ def compute_block_time_series_0(
     - ``service_speed``: ``service_distance/service_duration``
       for the route
 
-
     Notes
     -----
+    - If "active_blocks" is True, add an "is_active" column
+      indicating whether the block is active during the time bin, as
+      determined by block start/end times from compute_block_stats_0.
     - Trips that lack start or end times are ignored, so the the
       aggregate ``num_trips`` across the day could be less than the
-      ``num_trips`` column of :func:`compute_route_stats_0`
+      ``num_trips`` column of :func:`compute_block_stats_0`
     - All trip departure times are taken modulo 24 hours.
-      So routes with trips that end past 23:59:59 will have all
+      So blocks with trips that end past 23:59:59 will have all
       their stats wrap around to the early morning of the time series,
       except for their ``num_trip_ends`` indicator.
       Trip endings past 23:59:59 are not binned so that resampling the
@@ -579,8 +450,6 @@ def compute_block_time_series_0(
       track of only one extra count, ``num_trip_ends``, and can avoid
       recording individual trip IDs.
     - All other indicators are downsampled by summing.
-    - Raise a ValueError if ``split_directions`` and no non-null
-      direction ID values present
 
     """
     final_cols = [
@@ -600,9 +469,11 @@ def compute_block_time_series_0(
     if trip_stats.empty:
         return null_stats
 
-    tss = trip_stats.copy()
-    
-    blocks = tss["block_id"].unique()
+    # confirm block_id column has valid values
+    if trip_stats['block_id'].isna().all():
+        raise ValueError('Cannot compute without valid block_id values in feed.trips.')
+
+    tss = trip_stats.dropna(subset='block_id').copy() # drop non valid block ids.
 
     # Build a dictionary of time series and then merge them all
     # at the end.
@@ -715,10 +586,10 @@ def compute_block_time_series_0(
         series_by_indicator, kind="block", active_blocks=active_blocks
     )
     # Downsample to requested frequency (sum for counts/durations/distances; speed handled by helper)
-    breakpoint()
     ds = hp.downsample(g, freq=freq, active_blocks=active_blocks)
     # is_active is a boolean indicator
-    if active_blocks: ds['is_active'] = ds['is_active'].apply(bool)
+    if active_blocks: 
+        ds['is_active'] = ds['is_active'].apply(bool)
     return ds
 
 
@@ -765,6 +636,9 @@ def compute_block_time_series(
 
     Notes
     -----
+    - If "active_blocks" is True, add an "is_active" column
+      indicating whether the block is active during the time bin, as
+      determined by block start/end times from compute_block_stats_0.
     - If you've already computed trip stats in your workflow, then you should pass
       that table into this function to speed things up significantly.
     - See the notes for :func:`compute_block_time_series_0`

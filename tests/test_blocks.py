@@ -69,9 +69,12 @@ def test_compute_block_stats_0():
     # test error w no valid block_id
     feed = cairns.copy()
     # note - not reading saved test trip_stats bc does not contain block_id
+
+    # test gtfs file without block ids.
     ts1 = cairns.compute_trip_stats()
-    with pytest.raises(ValueError):
-        gkb.compute_block_stats_0(ts1)
+    bs0 = gkb.compute_block_stats_0(ts1)
+    assert bs0.shape[0] == 0
+    assert set(bs0.columns) == expect_cols
     
 
 def test_compute_block_stats():

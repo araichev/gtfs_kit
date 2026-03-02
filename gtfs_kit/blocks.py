@@ -6,6 +6,7 @@ from __future__ import annotations
 from functools import reduce
 from typing import TYPE_CHECKING, Callable, List
 
+import warnings
 import datetime as dt
 import numpy as np
 import pandas as pd
@@ -193,9 +194,9 @@ def compute_block_stats_0(
     if trip_stats.empty:
         return null_stats
 
-    # confirm block_id column has valid values
+    # check if block_id column has valid values
     if trip_stats['block_id'].isna().all():
-        raise ValueError('Cannot compute without valid block_id values in feed.trips.')
+        return null_stats
 
     # Remove defunct trips
     f = trip_stats.loc[lambda x: x["duration"] > 0].copy()
@@ -352,7 +353,8 @@ def compute_block_stats(
 
 
     null_stats = compute_block_stats_0(feed.trips.head(0))
-    final_cols = ["date"] + list(null_stats.columns)
+    final_cols = list(null_stats.columns)
+    final_cols.insert(0, 'date')
     null_stats = null_stats.assign(date=None).filter(final_cols)
     dates = feed.subset_dates(dates)
     
@@ -371,6 +373,7 @@ def compute_block_stats(
     stats_by_ids = {}
     activity = feed.compute_trip_activity(dates)
     frames = []
+    empty_block_dates = []
     for date in dates:
         ids = tuple(sorted(activity.loc[activity[date] > 0, "trip_id"].values))
         if ids in stats_by_ids:
@@ -388,11 +391,19 @@ def compute_block_stats(
             stats_by_ids[ids] = stats
         else:
             stats = null_stats
-
-        frames.append(stats)
+        
+        if stats.empty:
+            empty_block_dates.append(date)
+            continue
+        else:
+            frames.append(stats)
 
     # Collate stats
     sort_by = ["date", "block_id"]
+    if empty_block_dates:
+        warnings.warn(f"The following dates had no active blocks and thus are not included in the output: {empty_block_dates}", stacklevel=2)
+    if not frames:
+        return null_stats
     return pd.concat(frames).filter(final_cols).sort_values(sort_by)
 
 def compute_block_time_series_0(
@@ -462,6 +473,7 @@ def compute_block_time_series_0(
         "service_duration",
         "service_speed",
     ]
+    if active_blocks: final_cols.append('is_active')
 
     null_stats = pd.DataFrame([], columns=final_cols)
 
@@ -469,9 +481,9 @@ def compute_block_time_series_0(
     if trip_stats.empty:
         return null_stats
 
-    # confirm block_id column has valid values
+    # check if block_id column has valid values
     if trip_stats['block_id'].isna().all():
-        raise ValueError('Cannot compute without valid block_id values in feed.trips.')
+        return null_stats
 
     tss = trip_stats.dropna(subset='block_id').copy() # drop non valid block ids.
 
@@ -647,7 +659,7 @@ def compute_block_time_series(
 
     """
     dates = feed.subset_dates(dates)
-    null_stats = compute_block_time_series_0(pd.DataFrame())
+    null_stats = compute_block_time_series_0(pd.DataFrame(), active_blocks=active_blocks)
 
     # Handle defunct case
     if not dates:
@@ -663,10 +675,10 @@ def compute_block_time_series(
     # to avoid unnecessary re-computations.
     # Store in dictionary of the form
     # trip ID sequence -> stats table
-    null_stats = pd.DataFrame()
     stats_by_ids = {}
     activity = feed.compute_trip_activity(dates)
     frames = []
+    empty_block_dates = []
     for date in dates:
         ids = tuple(sorted(activity.loc[activity[date] > 0, "trip_id"].values))
         if ids in stats_by_ids:
@@ -682,8 +694,17 @@ def compute_block_time_series(
             stats_by_ids[ids] = stats
         else:
             stats = null_stats
+        
+        if stats.empty:
+            empty_block_dates.append(date)
+            continue
 
         frames.append(stats)
 
     # Collate stats
+    if empty_block_dates:
+        warnings.warn(f"The following dates had no active blocks and thus are not included in the output: {empty_block_dates}", stacklevel=2)
+    if not frames: # if no dates had active blocks, frames will be empty and we should return null_stats
+        return null_stats
+        
     return pd.concat(frames, ignore_index=True)

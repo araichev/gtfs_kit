@@ -14,7 +14,10 @@ from gtfs_kit import feed as gkf
 from gtfs_kit import constants as cs
 
 
-def test_feed():
+def test_feed(monkeypatch):
+    # -------------------------------------------------
+    # Section 1: constructor basics
+    # -------------------------------------------------
     feed = gkf.Feed(agency=pd.DataFrame(), dist_units="km")
     for key in cs.FEED_ATTRS:
         val = getattr(feed, key)
@@ -24,6 +27,63 @@ def test_feed():
             assert isinstance(val, pd.DataFrame)
         else:
             assert val is None
+
+    # -------------------------------------------------
+    # Section 2: expected wrapped methods exist
+    # -------------------------------------------------
+    for name in [
+        "get_dates",
+        "clean",
+        "describe",
+        "get_routes",
+        "get_shapes",
+        "get_stop_times",
+        "get_stops",
+        "get_trips",
+    ]:
+        assert hasattr(feed, name)
+        assert callable(getattr(feed, name))
+
+    # -------------------------------------------------
+    # Section 3: every declared feed method is attached
+    # -------------------------------------------------
+    for name in gkf._FEED_METHODS:
+        assert hasattr(gkf.Feed, name)
+        assert callable(getattr(gkf.Feed, name))
+
+    # -------------------------------------------------
+    # Section 4: wrapper delegates self/args/kwargs
+    # -------------------------------------------------
+    seen = {}
+
+    def fake_get_trips(feed_arg, *args, **kwargs):
+        seen["feed"] = feed_arg
+        seen["args"] = args
+        seen["kwargs"] = kwargs
+        return "ok"
+
+    monkeypatch.setitem(gkf._FEED_METHODS, "get_trips", fake_get_trips)
+    monkeypatch.setattr(gkf.Feed, "get_trips", gkf._make_feed_method(fake_get_trips))
+
+    result = feed.get_trips("20240101", time="08:00:00")
+
+    assert result == "ok"
+    assert seen["feed"] is feed
+    assert seen["args"] == ("20240101",)
+    assert seen["kwargs"] == {"time": "08:00:00"}
+
+    # -------------------------------------------------
+    # Section 5: wraps preserves basic metadata
+    # -------------------------------------------------
+    assert gkf.Feed.get_trips.__name__ == fake_get_trips.__name__
+    assert gkf.Feed.get_trips.__doc__ == fake_get_trips.__doc__
+
+    # -------------------------------------------------
+    # Section 6: one real wrapped method still works
+    # -------------------------------------------------
+    sample_feed = gkf.read_feed(DATA_DIR / "sample_gtfs.zip", dist_units="km")
+    result = sample_feed.subset_dates(["20070101"])
+    assert isinstance(result, list)
 
 
 def test_str():

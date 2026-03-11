@@ -25,7 +25,6 @@ from copy import deepcopy
 
 import pandas as pd
 import requests
-from pandas.core.frame import DataFrame
 
 from . import cleaners as cn
 from . import constants as cs
@@ -162,20 +161,20 @@ class Feed(object):
     def __init__(
         self,
         dist_units: str,
-        agency: DataFrame | None = None,
-        stops: DataFrame | None = None,
-        routes: DataFrame | None = None,
-        trips: DataFrame | None = None,
-        stop_times: DataFrame | None = None,
-        calendar: DataFrame | None = None,
-        calendar_dates: DataFrame | None = None,
-        fare_attributes: DataFrame | None = None,
-        fare_rules: DataFrame | None = None,
-        shapes: DataFrame | None = None,
-        frequencies: DataFrame | None = None,
-        transfers: DataFrame | None = None,
-        feed_info: DataFrame | None = None,
-        attributions: DataFrame | None = None,
+        agency: pd.DataFrame | None = None,
+        stops: pd.DataFrame | None = None,
+        routes: pd.DataFrame | None = None,
+        trips: pd.DataFrame | None = None,
+        stop_times: pd.DataFrame | None = None,
+        calendar: pd.DataFrame | None = None,
+        calendar_dates: pd.DataFrame | None = None,
+        fare_attributes: pd.DataFrame | None = None,
+        fare_rules: pd.DataFrame | None = None,
+        shapes: pd.DataFrame | None = None,
+        frequencies: pd.DataFrame | None = None,
+        transfers: pd.DataFrame | None = None,
+        feed_info: pd.DataFrame | None = None,
+        attributions: pd.DataFrame | None = None,
     ):
         """
         Assume that every non-None input is a DataFrame,
@@ -306,7 +305,7 @@ class Feed(object):
 # -------------------------------------
 # Functions about input and output
 # -------------------------------------
-def list_feed(path: pl.Path) -> DataFrame:
+def list_feed(path: pl.Path) -> pd.DataFrame:
     """
     Given a path (string or Path object) to a GTFS zip file or
     directory, record the file names and file sizes of the contents,

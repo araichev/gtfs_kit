@@ -476,7 +476,7 @@ def downsample(time_series: pd.DataFrame, freq: str) -> pd.DataFrame:
                 series.append(s.rename(col))
 
             agg = (
-                pd.concat(series, axis="columns")
+                pd.concat(series, axis="columns", sort=False)
                 # Remove any extra dates inserted in between,
                 # which will have all NAN values
                 .dropna()

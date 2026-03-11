@@ -1,12 +1,16 @@
+[build-system]
+requires = ["hatchling>=1.24"]
+build-backend = "hatchling.build"
+
 [project]
 name = "gtfs-kit"
-version = "12.0.2"
+version = "12.0.3"
 description = "A Python library for analyzing GTFS feeds."
 readme = "README.rst"
 requires-python = ">=3.10"
 license = "MIT"
 authors = [
-    { name = "Alexander Raichev", email = "araichev@mrcagney.com" },
+    { name = "Alexander Raichev", email = "alexander@raichev.net" },
 ]
 dependencies = [
     "shapely>=1.8",
@@ -35,14 +39,10 @@ dev = [
 ]
 
 [project.urls]
-Repository = "https://github.com/mrcagney/gtfs_kit"
-Documentation = "https://mrcagney.github.io/gtfs_kit_docs"
+Repository = "https://github.com/araichev/gtfs_kit"
+Documentation = "https://araichev.github.io/gtfs_kit_docs"
 
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
-
-[tool.setuptools]
+[tool.hatch.build.targets.wheel]
 packages = ["gtfs_kit"]
 
 [tool.pytest.ini_options]
@@ -53,7 +53,8 @@ markers = [
 
 [tool.ruff]
 line-length = 90
-# Enable pycodestyle (`E`) and Pyflakes (`F`) codes by default.
-lint.select = ["E", "F"]
-lint.ignore = ["E501", "E731", "F401", "F403"]
 exclude = ["notebooks/*.py", "notebooks/*.ipynb"]
+
+[tool.ruff.lint]
+select = ["E", "F"]
+ignore = ["E501", "E731", "F401", "F403"]

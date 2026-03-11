@@ -26,19 +26,18 @@ def build_route_timetable(feed: "Feed", route_id: str, dates: list[str]) -> pd.D
     """
     Return a timetable for the given route and dates (YYYYMMDD date strings).
 
-    Return a DataFrame with whose columns are all those in ``feed.trips`` plus those in
-    ``feed.stop_times`` plus ``'date'``.
+    Return a table whose columns are all those in ``feed.trips`` plus
+    those in ``feed.stop_times`` plus ``'date'``.
     The trip IDs are restricted to the given route ID.
-    The result is sorted first by date and then by grouping by
-    trip ID and sorting the groups by their first departure time.
 
+    The result is sorted first by date then by grouping by trip ID and
+    sorting the groups by their first departure time.
     Skip dates outside of the Feed's dates.
-
-    If there is no route activity on the given dates, then return
-    an empty DataFrame.
+    If there is no route activity on the given dates, then return an empty table.
     """
     dates = feed.subset_dates(dates)
     final_cols = ["date"] + feed.trips.columns.tolist() + feed.stop_times.columns.tolist()
+
     if not dates:
         return pd.DataFrame(columns=final_cols)
 
@@ -52,11 +51,16 @@ def build_route_timetable(feed: "Feed", route_id: str, dates: list[str]) -> pd.D
         ids = a.loc[a[date] == 1, "trip_id"]
         f = t[t["trip_id"].isin(ids)].copy()
         f["date"] = date
-        # Groupby trip ID and sort groups by their minimum departure time.
-        # For some reason NaN departure times mess up the transform below.
-        # So temporarily fill NaN departure times as a workaround.
-        f["dt"] = f["departure_time"].ffill().map(hp.timestr_to_seconds)
-        f["min_dt"] = f.groupby("trip_id")["dt"].transform("min")
+
+        # Group by trip ID and sort groups by their minimum departure time.
+        # Fill missing departure times only within each trip so values do not
+        # bleed across trip boundaries.
+        f["dt"] = (
+            f.groupby("trip_id", sort=False)["departure_time"]
+            .ffill()
+            .map(hp.timestr_to_seconds)
+        )
+        f["min_dt"] = f.groupby("trip_id", sort=False)["dt"].transform("min")
         frames.append(f)
 
     return (
@@ -123,11 +127,14 @@ def get_routes(
                 return pd.Series({"geometry": None})
             return pd.Series({"geometry": so.linemerge(lines)})
 
+        geom_cols = groupby_cols + ["shape_id", "geometry"]
+        trip_geoms = trips.loc[:, geom_cols].copy()
+
+        # Deduplicate shape geometries at the same aggregation grain used below.
+        trip_geoms = trip_geoms.drop_duplicates(subset=["shape_id"] + groupby_cols)
+
         f = (
-            trips
-            # Drop unnecessary duplicate shapes
-            .drop_duplicates(subset=["shape_id", "route_id"])
-            .filter(groupby_cols + ["geometry"])
+            trip_geoms.filter(groupby_cols + ["geometry"])
             .groupby(groupby_cols)
             .apply(merge_lines, include_groups=False)
             .reset_index()

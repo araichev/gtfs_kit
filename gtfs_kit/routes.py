@@ -127,11 +127,14 @@ def get_routes(
                 return pd.Series({"geometry": None})
             return pd.Series({"geometry": so.linemerge(lines)})
 
+        geom_cols = groupby_cols + ["shape_id", "geometry"]
+        trip_geoms = trips.loc[:, geom_cols].copy()
+
+        # Deduplicate shape geometries at the same aggregation grain used below.
+        trip_geoms = trip_geoms.drop_duplicates(subset=["shape_id"] + groupby_cols)
+
         f = (
-            trips
-            # Drop unnecessary duplicate shapes
-            .drop_duplicates(subset=["shape_id", "route_id"])
-            .filter(groupby_cols + ["geometry"])
+            trip_geoms.filter(groupby_cols + ["geometry"])
             .groupby(groupby_cols)
             .apply(merge_lines, include_groups=False)
             .reset_index()

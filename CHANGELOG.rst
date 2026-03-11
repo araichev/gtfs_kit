@@ -1,6 +1,16 @@
 Changelog
 =========
 
+12.0.3, 2026-03-12
+------------------
+- Migrated project packaging to Hatchling.
+- Reworked Feed method wiring to use explicit wrapper-method attachment, preserving modular implementations while making the exposed API more deliberate.
+- Corrected route timetable sorting so filled departure times do not leak across trip boundaries.
+- Corrected route geometry aggregation with split_directions=True so shapes are deduplicated per route and direction.
+- Silenced a Pandas concatenation deprecation warning by making index-sort behavior explicit.
+- Hardened remote GTFS loading with streamed downloads, timeout handling, content validation, and safer temporary-file cleanup.
+- Expanded tests for Feed method attachment behavior and remote feed ingestion.
+
 12.0.2, 2026-01-12
 ------------------
 - Sped up reading GTFS feeds from file and a few other functions, thanks to user ``abdelq`` and `pull request 37 <https://github.com/araichev/gtfs_kit/pull/37>`_.

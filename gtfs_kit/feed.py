@@ -433,26 +433,28 @@ def _read_feed_from_url(url: str, dist_units: str) -> "Feed":
             r.raise_for_status()
 
             content_type = (r.headers.get("Content-Type") or "").lower()
+
+            # Content-Type is only a heuristic: accept common zip-ish values,
+            # tolerate a missing header, but reject obvious non-zip responses.
             if content_type and not any(
                 token in content_type
                 for token in (
                     "application/zip",
                     "application/x-zip-compressed",
                     "application/octet-stream",
+                    "application/binary",
                     "multipart/x-zip",
+                    "application/x-download",
                 )
             ):
-                raise ValueError(
-                    f"URL does not appear to be a GTFS zip archive "
-                    f"(Content-Type: {content_type!r})"
-                )
+                raise ValueError(f"URL returned a non-zip content type: {content_type!r}")
 
             with tmp_path.open("wb") as f:
                 for chunk in r.iter_content(chunk_size=1024 * 1024):
                     if chunk:
                         f.write(chunk)
 
-        # Validate that the downloaded payload is actually a zip archive.
+        # Final authority: verify the downloaded payload is actually a zip file.
         if not zipfile.is_zipfile(tmp_path):
             raise ValueError("Downloaded content is not a valid zip archive")
 
@@ -476,5 +478,7 @@ def read_feed(path_or_url: pl.Path | str, dist_units: str) -> "Feed":
 
     try:
         return _read_feed_from_url(str(path_or_url), dist_units=dist_units)
-    except requests.RequestException as e:
-        raise ValueError(f"Path does not exist or URL could not be fetched: {e}") from e
+    except (requests.RequestException, ValueError, zipfile.BadZipFile) as e:
+        raise ValueError(
+            f"Path does not exist or URL could not be read as a GTFS zip: {e}"
+        ) from e

@@ -2,6 +2,8 @@ import pytest
 from pathlib import Path
 import shutil
 import tempfile
+import io
+import zipfile
 
 import pandas as pd
 from pandas.testing import assert_frame_equal
@@ -89,6 +91,57 @@ def test_list_feed():
         assert isinstance(f, pd.DataFrame)
         assert set(f.columns) == {"file_name", "file_size"}
         assert f.shape[0] in [12, 13]
+
+
+def test_read_feed_from_url(monkeypatch):
+    # Build an in-memory zip payload.
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("agency.txt", "agency_id,agency_name,agency_url,agency_timezone\n")
+    zip_bytes = buf.getvalue()
+
+    class FakeResponse:
+        def __init__(self, content: bytes):
+            self._content = content
+            self.headers = {"Content-Type": "application/octet-stream"}
+
+        def raise_for_status(self):
+            pass
+
+        def iter_content(self, chunk_size=1024 * 1024):
+            yield self._content
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    captured = {}
+
+    def fake_get(url, stream=True, timeout=(10, 60)):
+        assert url == "https://example.com/feed.zip"
+        assert stream is True
+        assert timeout == (10, 60)
+        return FakeResponse(zip_bytes)
+
+    def fake_read_feed_from_path(path, dist_units):
+        # The temp file should exist while being parsed.
+        assert path.exists()
+        assert zipfile.is_zipfile(path)
+        captured["path"] = path
+        captured["dist_units"] = dist_units
+        return "FAKE_FEED"
+
+    monkeypatch.setattr(gkf.requests, "get", fake_get)
+    monkeypatch.setattr(gkf, "_read_feed_from_path", fake_read_feed_from_path)
+
+    result = gkf.read_feed("https://example.com/feed.zip", dist_units="km")
+
+    assert result == "FAKE_FEED"
+    assert captured["dist_units"] == "km"
+    # TemporaryDirectory cleanup should remove the downloaded file after return.
+    assert not captured["path"].exists()
 
 
 def test_read_feed():

@@ -410,46 +410,61 @@ def _read_feed_from_path(path: pl.Path, dist_units: str) -> "Feed":
 def _read_feed_from_url(url: str, dist_units: str) -> "Feed":
     """
     Helper function for :func:`read_feed`.
+
     Create a Feed instance from the given URL and given distance units.
-    Assume the URL is valid and let the Requests library raise any errors.
-
     Notes:
-
     - Ignore non-GTFS files in the feed
     - Automatically strip whitespace from the column names in GTFS files
-
-
     """
-    f = tempfile.NamedTemporaryFile(delete=False)
-    with requests.get(url) as r:
-        f.write(r._content)
-    f.close()
-    feed = _read_feed_from_path(f.name, dist_units=dist_units)
-    pl.Path(f.name).unlink()
-    return feed
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp_path = pl.Path(tmp_dir) / "feed.zip"
+
+        with requests.get(url, stream=True, timeout=(10, 60)) as r:
+            r.raise_for_status()
+
+            content_type = (r.headers.get("Content-Type") or "").lower()
+            if content_type and not any(
+                token in content_type
+                for token in (
+                    "application/zip",
+                    "application/x-zip-compressed",
+                    "application/octet-stream",
+                    "multipart/x-zip",
+                )
+            ):
+                raise ValueError(
+                    f"URL does not appear to be a GTFS zip archive "
+                    f"(Content-Type: {content_type!r})"
+                )
+
+            with tmp_path.open("wb") as f:
+                for chunk in r.iter_content(chunk_size=1024 * 1024):
+                    if chunk:
+                        f.write(chunk)
+
+        # Validate that the downloaded payload is actually a zip archive.
+        if not zipfile.is_zipfile(tmp_path):
+            raise ValueError("Downloaded content is not a valid zip archive")
+
+        return _read_feed_from_path(tmp_path, dist_units=dist_units)
 
 
 def read_feed(path_or_url: pl.Path | str, dist_units: str) -> "Feed":
     """
     Create a Feed instance from the given path or URL and given distance units.
-    If the path exists, then call :func:`_read_feed_from_path`.
-    Else if the URL has OK status according to Requests, then call
-    :func:`_read_feed_from_url`.
-    Else raise a ValueError.
 
     Notes:
-
     - Ignore non-GTFS files in the feed
     - Automatically strip whitespace from the column names in GTFS files
-
     """
     try:
-        path_exists = pl.Path(path_or_url).exists()
+        path = pl.Path(path_or_url)
+        if path.exists():
+            return _read_feed_from_path(path, dist_units=dist_units)
     except OSError:
-        path_exists = False
-    if path_exists:
-        return _read_feed_from_path(path_or_url, dist_units=dist_units)
-    elif requests.head(path_or_url).ok:
-        return _read_feed_from_url(path_or_url, dist_units=dist_units)
-    else:
-        raise ValueError("Path does not exist or URL has bad status.")
+        pass
+
+    try:
+        return _read_feed_from_url(str(path_or_url), dist_units=dist_units)
+    except requests.RequestException as e:
+        raise ValueError(f"Path does not exist or URL could not be fetched: {e}") from e

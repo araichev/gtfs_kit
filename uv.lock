@@ -547,7 +547,7 @@ wheels = [
 [[package]]
 name = "gtfs-kit"
 version = "12.0.2"
-source = { editable = "." }
+source = { virtual = "." }
 dependencies = [
     { name = "folium" },
     { name = "geopandas" },

@@ -71,13 +71,14 @@ def get_trips(
     *,
     as_gdf: bool = False,
     use_utm: bool = False,
-) -> pd.DataFrame:
+) -> pd.DataFrame | None:
     """
     Return ``feed.trips``.
     If date (YYYYMMDD date string) is given then subset the result to trips
     that start on that date.
     If a time (HH:MM:SS string, possibly with HH > 23) is given in addition to a date,
-    then further subset the result to trips in service at that time.
+    then further subset the result to trips in service at that time
+    (using trip departure times).
 
     If ``as_gdf`` and ``feed.shapes`` is not None, then return the trips as a
     GeoDataFrame of LineStrings representating trip shapes.

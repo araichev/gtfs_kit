@@ -1,3 +1,7 @@
+[build-system]
+requires = ["hatchling>=1.24"]
+build-backend = "hatchling.build"
+
 [project]
 name = "gtfs-kit"
 version = "12.0.2"
@@ -38,7 +42,7 @@ dev = [
 Repository = "https://github.com/araichev/gtfs_kit"
 Documentation = "https://araichev.github.io/gtfs_kit_docs"
 
-[tool.setuptools]
+[tool.hatch.build.targets.wheel]
 packages = ["gtfs_kit"]
 
 [tool.pytest.ini_options]
@@ -49,7 +53,8 @@ markers = [
 
 [tool.ruff]
 line-length = 90
-# Enable pycodestyle (`E`) and Pyflakes (`F`) codes by default.
-lint.select = ["E", "F"]
-lint.ignore = ["E501", "E731", "F401", "F403"]
 exclude = ["notebooks/*.py", "notebooks/*.ipynb"]
+
+[tool.ruff.lint]
+select = ["E", "F"]
+ignore = ["E501", "E731", "F401", "F403"]

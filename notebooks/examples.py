@@ -1,11 +1,11 @@
 import marimo
 
-__generated_with = "0.16.2"
+__generated_with = "0.17.0"
 app = marimo.App(width="medium")
 
 
 @app.cell
-def _():
+def _(Path):
     import pathlib as pl
     import json
 
@@ -18,7 +18,10 @@ def _():
 
     import gtfs_kit as gk
 
-    DATA = pl.Path("data")
+
+    HERE = pl.Path(__file__).resolve().parent if "__file__" in globals() else Path.cwd()
+    PROJECT_ROOT = HERE.parent  # notebooks/ -> project/
+    DATA = (PROJECT_ROOT / "data").resolve()
     return DATA, fl, gk, gp, mo, pd
 
 
@@ -61,21 +64,21 @@ def _(feed_1):
 
     trip_stats = feed_1.compute_trip_stats()
     trip_stats
-    return (trip_stats,)
+    return
 
 
 @app.cell
-def _(dates, feed_1, trip_stats):
+def _(dates, feed_1):
     # Pass in trip stats to avoid recomputing them
 
-    network_stats = feed_1.compute_network_stats(dates, trip_stats=trip_stats)
+    network_stats = feed_1.compute_network_stats(dates)
     network_stats
     return
 
 
 @app.cell
-def _(dates, feed_1, trip_stats):
-    nts = feed_1.compute_network_time_series(dates, trip_stats=trip_stats, freq="6h")
+def _(dates, feed_1):
+    nts = feed_1.compute_network_time_series(dates, freq="6h")
     nts
     return (nts,)
 
@@ -102,10 +105,10 @@ def _(gk, sts):
 
 
 @app.cell
-def _(dates, feed_1, trip_stats):
+def _(dates, feed_1):
     # Route time series
 
-    rts = feed_1.compute_route_time_series(dates, trip_stats=trip_stats, freq="12h")
+    rts = feed_1.compute_route_time_series(dates, freq="12h")
     rts
     return
 
@@ -181,10 +184,15 @@ def _(DATA, feed_1, fl, gp):
 
 @app.cell
 def _(dates, feed_1, screen_line, trip_id):
-    # Screen line counts 
+    # Screen line counts
 
     slc = feed_1.compute_screen_line_counts(screen_line, dates=dates)
     slc.loc[lambda x: x["trip_id"] == trip_id]
+    return
+
+
+@app.cell
+def _():
     return
 
 

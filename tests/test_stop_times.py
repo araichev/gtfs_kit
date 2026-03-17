@@ -81,15 +81,15 @@ def test_append_dist_to_stop_times():
 def test_stop_times_to_geojson():
     feed = cairns.copy()
     trip_ids = feed.trips.trip_id.unique()[:2]
-    collection = gks.stop_times_to_geojson(feed, trip_ids)
-    assert isinstance(collection, dict)
+    gj = gks.stop_times_to_geojson(feed, trip_ids)
+    assert isinstance(gj, dict)
 
     n = (
         feed.stop_times.loc[lambda x: x.trip_id.isin(trip_ids)]
         .drop_duplicates(subset=["trip_id", "stop_id"])
         .shape[0]
     )
-    assert len(collection["features"]) == n
+    assert len(gj["features"]) == n
 
-    with pytest.raises(ValueError):
-        gks.stop_times_to_geojson(feed, ["bingo"])
+    gj = gks.stop_times_to_geojson(feed, ["bingo"])
+    assert not gj["features"]

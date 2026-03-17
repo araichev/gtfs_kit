@@ -1,7 +1,7 @@
 data/other_feeds
 monkeytype.sqlite
 notebooks/prototyping.py
-**/__marimo__
+notebooks/__marimo__/
 
 # Byte-compiled / optimized / DLL files
 .ruff_cache/

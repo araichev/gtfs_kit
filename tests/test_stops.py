@@ -81,6 +81,7 @@ def test_build_stop_timetable():
     # Empty check
     f = gks.build_stop_timetable(feed, stop_id, [])
     assert f.empty
+    assert set(f.columns) == expect_cols
 
 
 def test_geometrize_stops():
@@ -92,9 +93,7 @@ def test_geometrize_stops():
     assert geo_stops.shape[0] == stops.shape[0]
     assert geo_stops.shape[1] == stops.shape[1] - 1
     # Should have the correct columns
-    expect_cols = set(list(stops.columns) + ["geometry"]) - set(
-        ["stop_lon", "stop_lat"]
-    )
+    expect_cols = set(list(stops.columns) + ["geometry"]) - set(["stop_lon", "stop_lat"])
     assert set(geo_stops.columns) == expect_cols
 
 
@@ -117,13 +116,12 @@ def test_build_geometry_by_stop():
 
 def test_stops_to_geojson():
     feed = cairns.copy()
-    stop_ids = feed.stops.stop_id.unique()[:2]
-    collection = gks.stops_to_geojson(feed, stop_ids)
-    assert isinstance(collection, dict)
-    assert len(collection["features"]) == len(stop_ids)
-
-    with pytest.raises(ValueError):
-        gks.stops_to_geojson(feed, ["bingo"])
+    stop_ids = feed.stops["stop_id"].tolist()[:2]
+    gj = gks.stops_to_geojson(feed, stop_ids)
+    assert isinstance(gj, dict)
+    assert len(gj["features"]) == len(stop_ids)
+    gj = gks.stops_to_geojson(feed, ["bingo"])
+    assert not gj["features"]
 
 
 def test_get_stops_in_area():
@@ -225,9 +223,7 @@ def test_compute_stop_stats():
         set(f["date"].tolist()) == set(cairns_dates)
 
         # Non-feed dates should yield empty DataFrame
-        f = gks.compute_stop_stats(
-            feed, ["19990101"], split_directions=split_directions
-        )
+        f = gks.compute_stop_stats(feed, ["19990101"], split_directions=split_directions)
         assert f.empty
 
 

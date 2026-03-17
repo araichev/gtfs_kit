@@ -173,13 +173,21 @@ def test_build_route_timetable():
 
 def test_routes_to_geojson():
     feed = cairns.copy()
-    route_ids = feed.routes.route_id.loc[:1]
-    n = len(route_ids)
+    n = 3
+    route_ids = feed.routes["route_id"].to_list()[:n]
+    route_short_names = feed.routes.loc[
+        lambda x: x["route_id"] == route_ids[-1], "route_short_name"
+    ]
+    route_ids = route_ids[: n - 1]
 
-    gj = gkr.routes_to_geojson(feed, route_ids)
+    gj = gkr.routes_to_geojson(
+        feed, route_ids=route_ids, route_short_names=route_short_names
+    )
     assert len(gj["features"]) == n
 
-    gj = gkr.routes_to_geojson(feed, route_ids, include_stops=True)
+    gj = gkr.routes_to_geojson(
+        feed, route_ids=route_ids, route_short_names=route_short_names, include_stops=True
+    )
     k = (
         feed.stop_times.merge(feed.trips.filter(["trip_id", "route_id"]))
         .loc[lambda x: x.route_id.isin(route_ids), "stop_id"]
@@ -190,8 +198,8 @@ def test_routes_to_geojson():
     with pytest.raises(ValueError):
         gkr.routes_to_geojson(cairns_shapeless)
 
-    with pytest.raises(ValueError):
-        gkr.routes_to_geojson(cairns, route_ids=["bingo"])
+    gj = gkr.routes_to_geojson(cairns, route_ids=["bingo"])
+    assert not gj["features"]
 
 
 def test_map_routes():

@@ -71,13 +71,14 @@ def get_trips(
     *,
     as_gdf: bool = False,
     use_utm: bool = False,
-) -> pd.DataFrame:
+) -> pd.DataFrame | None:
     """
     Return ``feed.trips``.
     If date (YYYYMMDD date string) is given then subset the result to trips
     that start on that date.
     If a time (HH:MM:SS string, possibly with HH > 23) is given in addition to a date,
-    then further subset the result to trips in service at that time.
+    then further subset the result to trips in service at that time
+    (using trip departure times).
 
     If ``as_gdf`` and ``feed.shapes`` is not None, then return the trips as a
     GeoDataFrame of LineStrings representating trip shapes.
@@ -151,17 +152,13 @@ def compute_trip_activity(feed: "Feed", dates: list[str]) -> pd.DataFrame:
     if not dates:
         return pd.DataFrame()
 
-    # Get trip activity table for each day
-    frames = [feed.trips[["trip_id"]]]
+    active_services_by_date = {date: get_active_services(feed, date) for date in dates}
+    f = feed.trips[["trip_id", "service_id"]].copy()
     for date in dates:
-        frames.append(get_trips(feed, date)[["trip_id"]].assign(**{date: 1}))
+        active_services = active_services_by_date[date]
+        f[date] = f["service_id"].isin(active_services).astype(int)
 
-    # Merge daily trip activity tables into a single table
-    f = ft.reduce(lambda left, right: left.merge(right, how="outer"), frames).fillna(
-        {date: 0 for date in dates}
-    )
-    f[dates] = f[dates].astype(int)
-    return f
+    return f.drop("service_id", axis=1)
 
 
 def compute_busiest_date(feed: "Feed", dates: list[str]) -> str:
@@ -339,7 +336,8 @@ def compute_trip_stats(
         else:
             convert_dist = hp.get_convert_dist(feed.dist_units, "mi")
         h["distance"] = g.apply(
-            lambda group: convert_dist(group.shape_dist_traveled.max())
+            lambda group: convert_dist(group["shape_dist_traveled"].max()),
+            include_groups=False,
         )
     elif feed.shapes is not None:
         # Compute distances using the shapes and Shapely
@@ -509,33 +507,30 @@ def trips_to_geojson(
     include_stops: bool = False,
 ) -> dict:
     """
-    Return a GeoJSON FeatureCollection of LineString features representing
-    all the Feed's trips.
-    The coordinates reference system is the default one for GeoJSON,
-    namely WGS84.
+    Return a GeoJSON FeatureCollection (in WGS84 coordinates) of LineString features
+    representing this Feed's trips.
 
+    If an iterable of trip IDs is given, then subset to those trips, which could yield
+    an empty FeatureCollection in case all trip IDs are invalid.
     If ``include_stops``, then include the trip stops as Point features.
-    If an iterable of trip IDs is given, then subset to those trips.
-    If any of the given trip IDs are not found in the feed, then raise a ValueError.
     If the Feed has no shapes, then raise a ValueError.
     """
-    if trip_ids is None or not list(trip_ids):
-        trip_ids = feed.trips.trip_id
+    g = get_trips(feed, as_gdf=True)
+    if trip_ids is not None:
+        g = g.loc[lambda x: x["trip_id"].isin(trip_ids)]
 
-    D = set(trip_ids) - set(feed.trips.trip_id)
-    if D:
-        raise ValueError(f"Trip IDs {D} not found in feed.")
+    if g is None or g.empty:
+        gj = {
+            "type": "FeatureCollection",
+            "features": [],
+        }
+    else:
+        gj = json.loads(g.to_json(drop_id=True))
+        if include_stops:
+            st_gj = feed.stop_times_to_geojson(trip_ids)
+            gj["features"].extend(st_gj["features"])
 
-    # Get trips
-    g = get_trips(feed, as_gdf=True).loc[lambda x: x["trip_id"].isin(trip_ids)]
-    trips_gj = json.loads(g.to_json())
-
-    # Get stops if desired
-    if include_stops:
-        st_gj = feed.stop_times_to_geojson(trip_ids)
-        trips_gj["features"].extend(st_gj["features"])
-
-    return hp.drop_feature_ids(trips_gj)
+    return gj
 
 
 def map_trips(

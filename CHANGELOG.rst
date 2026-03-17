@@ -1,6 +1,33 @@
 Changelog
 =========
 
+12.0.3, 2026-03-12
+------------------
+- Migrated project packaging to Hatchling.
+- Reworked Feed method wiring to use explicit wrapper-method attachment, preserving modular implementations while making the exposed API more deliberate.
+- Corrected route timetable sorting so filled departure times do not leak across trip boundaries.
+- Corrected route geometry aggregation with split_directions=True so shapes are deduplicated per route and direction.
+- Silenced a Pandas concatenation deprecation warning by making index-sort behavior explicit.
+- Hardened remote GTFS loading with streamed downloads, timeout handling, content validation, and safer temporary-file cleanup.
+- Expanded tests for Feed method attachment behavior and remote feed ingestion.
+
+12.0.2, 2026-01-12
+------------------
+- Sped up reading GTFS feeds from file and a few other functions, thanks to user ``abdelq`` and `pull request 37 <https://github.com/araichev/gtfs_kit/pull/37>`_.
+- Handled the case of missing ``parent_station`` column in ``miscellany.restrict_to_trips``, thereby remedying `issue 39<https://github.com/araichev/gtfs_kit/issues/39>`_.
+- Updated docs URL in README.
+- Updated dependencies.
+
+12.0.1, 2025-11-06
+------------------
+- Fixed and improved the docs.
+
+12.0.0, 2025-10-22
+------------------
+- Breaking change: Refactored and sped up functions ``shapes.split_simple`` and ``miscellany.compute_screen_line_counts`` to no longer segmentize linestrings, then removed the `segmentize` keyword argument from both functions.
+- Added ``route_short_names`` keyword argument to ``routes.routes_to_geojson``.
+- Silently dropped invalid stops, trips, and routes from ``stops.stops_to_geojson``, ``trips.trips_to_geojson``, and ``routes.routes_to_geojson`` instead of raising ``ValueError``s.
+
 11.0.1, 2025-10-10
 ------------------
 - Updated ``routes.get_routes(as_gdf=True)`` to ignore ``None`` geometries, fixing a bug spotted by Github user khamaileon.

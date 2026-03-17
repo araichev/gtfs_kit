@@ -26,19 +26,18 @@ def build_route_timetable(feed: "Feed", route_id: str, dates: list[str]) -> pd.D
     """
     Return a timetable for the given route and dates (YYYYMMDD date strings).
 
-    Return a DataFrame with whose columns are all those in ``feed.trips`` plus those in
-    ``feed.stop_times`` plus ``'date'``.
+    Return a table whose columns are all those in ``feed.trips`` plus
+    those in ``feed.stop_times`` plus ``'date'``.
     The trip IDs are restricted to the given route ID.
-    The result is sorted first by date and then by grouping by
-    trip ID and sorting the groups by their first departure time.
 
+    The result is sorted first by date then by grouping by trip ID and
+    sorting the groups by their first departure time.
     Skip dates outside of the Feed's dates.
-
-    If there is no route activity on the given dates, then return
-    an empty DataFrame.
+    If there is no route activity on the given dates, then return an empty table.
     """
     dates = feed.subset_dates(dates)
     final_cols = ["date"] + feed.trips.columns.tolist() + feed.stop_times.columns.tolist()
+
     if not dates:
         return pd.DataFrame(columns=final_cols)
 
@@ -52,11 +51,16 @@ def build_route_timetable(feed: "Feed", route_id: str, dates: list[str]) -> pd.D
         ids = a.loc[a[date] == 1, "trip_id"]
         f = t[t["trip_id"].isin(ids)].copy()
         f["date"] = date
-        # Groupby trip ID and sort groups by their minimum departure time.
-        # For some reason NaN departure times mess up the transform below.
-        # So temporarily fill NaN departure times as a workaround.
-        f["dt"] = f["departure_time"].ffill().map(hp.timestr_to_seconds)
-        f["min_dt"] = f.groupby("trip_id")["dt"].transform("min")
+
+        # Group by trip ID and sort groups by their minimum departure time.
+        # Fill missing departure times only within each trip so values do not
+        # bleed across trip boundaries.
+        f["dt"] = (
+            f.groupby("trip_id", sort=False)["departure_time"]
+            .ffill()
+            .map(hp.timestr_to_seconds)
+        )
+        f["min_dt"] = f.groupby("trip_id", sort=False)["dt"].transform("min")
         frames.append(f)
 
     return (
@@ -123,11 +127,14 @@ def get_routes(
                 return pd.Series({"geometry": None})
             return pd.Series({"geometry": so.linemerge(lines)})
 
+        geom_cols = groupby_cols + ["shape_id", "geometry"]
+        trip_geoms = trips.loc[:, geom_cols].copy()
+
+        # Deduplicate shape geometries at the same aggregation grain used below.
+        trip_geoms = trip_geoms.drop_duplicates(subset=["shape_id"] + groupby_cols)
+
         f = (
-            trips
-            # Drop unnecessary duplicate shapes
-            .drop_duplicates(subset=["shape_id", "route_id"])
-            .filter(groupby_cols + ["geometry"])
+            trip_geoms.filter(groupby_cols + ["geometry"])
             .groupby(groupby_cols)
             .apply(merge_lines, include_groups=False)
             .reset_index()
@@ -143,46 +150,53 @@ def get_routes(
 def routes_to_geojson(
     feed: "Feed",
     route_ids: Iterable[str | None] = None,
+    route_short_names: Iterable[str] | None = None,
     *,
     split_directions: bool = False,
     include_stops: bool = False,
 ) -> dict:
     """
-    Return a GeoJSON FeatureCollection of MultiLineString features representing this Feed's routes.
-    The coordinates reference system is the default one for GeoJSON,
-    namely WGS84.
+    Return a GeoJSON FeatureCollection (in WGS84 coordinates) of MultiLineString
+    features representing this Feed's routes.
 
-    If ``include_stops``, then include the route stops as Point features .
-    If an iterable of route IDs is given, then subset to those routes.
-    If the subset is empty, then return a FeatureCollection with an empty list of
-    features.
+    If an iterable of route IDs or route short names is given, then subset to the
+    union of those routes, which could yield an empty FeatureCollection in case of
+    all invalid route IDs / route short names.
+    If ``include_stops``, then include the route stops as Point features.
     If the Feed has no shapes, then raise a ValueError.
-    If any of the given route IDs are not found in the feed, then raise a ValueError.
     """
-    if route_ids is None or not list(route_ids):
-        route_ids = feed.routes.route_id
+    g = get_routes(feed, as_gdf=True, split_directions=split_directions)
 
-    D = set(route_ids) - set(feed.routes.route_id)
-    if D:
-        raise ValueError(f"Route IDs {D} not found in feed.")
-
-    # Get routes
-    g = get_routes(feed, as_gdf=True, split_directions=split_directions).loc[
-        lambda x: x["route_id"].isin(route_ids)
-    ]
-    collection = json.loads(g.to_json())
-
-    # Get stops if desired
-    if len(route_ids) and include_stops:
-        stop_ids = (
-            feed.stop_times.merge(feed.trips.filter(["trip_id", "route_id"]))
-            .loc[lambda x: x.route_id.isin(route_ids), "stop_id"]
-            .unique()
+    # Restrict routes if given
+    R = set()
+    if route_ids is not None:
+        R |= set(route_ids)
+    if route_short_names is not None:
+        R |= set(
+            feed.routes.loc[
+                lambda x: x["route_short_name"].isin(route_short_names), "route_id"
+            ]
         )
-        stops_gj = feed.stops_to_geojson(stop_ids=stop_ids)
-        collection["features"].extend(stops_gj["features"])
+    if R:
+        g = g.loc[lambda x: x["route_id"].isin(R)]
 
-    return hp.drop_feature_ids(collection)
+    if g is None or g.empty:
+        gj = {
+            "type": "FeatureCollection",
+            "features": [],
+        }
+    else:
+        gj = json.loads(g.to_json(drop_id=True))
+        if include_stops:
+            stop_ids = (
+                feed.stop_times.merge(feed.trips.filter(["trip_id", "route_id"]))
+                .loc[lambda x: x.route_id.isin(route_ids), "stop_id"]
+                .unique()
+            )
+            stops_gj = feed.stops_to_geojson(stop_ids=stop_ids)
+            gj["features"].extend(stops_gj["features"])
+
+    return gj
 
 
 def map_routes(

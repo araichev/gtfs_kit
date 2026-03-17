@@ -202,9 +202,7 @@ def is_metric(dist_units: str) -> bool:
     return dist_units in ["m", "km"]
 
 
-def get_convert_dist(
-    dist_units_in: str, dist_units_out: str
-) -> Callable[[float], float]:
+def get_convert_dist(dist_units_in: str, dist_units_out: str) -> Callable[[float], float]:
     """
     Return a function of the form
 
@@ -422,9 +420,7 @@ def downsample(time_series: pd.DataFrame, freq: str) -> pd.DataFrame:
         return f
 
     # Handle generic case
-    id_cols = list(
-        {"route_id", "stop_id", "direction_id", "route_type"} & set(f.columns)
-    )
+    id_cols = list({"route_id", "stop_id", "direction_id", "route_type"} & set(f.columns))
 
     if not id_cols:
         # Network time series without route type
@@ -480,7 +476,7 @@ def downsample(time_series: pd.DataFrame, freq: str) -> pd.DataFrame:
                 series.append(s.rename(col))
 
             agg = (
-                pd.concat(series, axis="columns")
+                pd.concat(series, axis="columns", sort=False)
                 # Remove any extra dates inserted in between,
                 # which will have all NAN values
                 .dropna()
@@ -518,22 +514,6 @@ def make_html(d: dict) -> str:
     return j2h.json2html.convert(
         json=d, table_attributes="class='table table-condensed table-hover'"
     )
-
-
-def drop_feature_ids(collection: dict) -> dict:
-    """
-    Given a GeoJSON FeatureCollection, remove the ``'id'`` attribute of each
-    Feature, if it exists.
-    """
-    new_features = []
-    for f in collection["features"]:
-        new_f = copy.deepcopy(f)
-        if "id" in new_f:
-            del new_f["id"]
-        new_features.append(new_f)
-
-    collection["features"] = new_features
-    return collection
 
 
 def longest_subsequence(

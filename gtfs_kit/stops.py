@@ -457,9 +457,7 @@ def compute_stop_time_series_0(
     rng = pd.date_range(
         pd.to_datetime(f"{date_label} 00:00:00"), periods=24 * 60, freq="Min"
     )
-    series_by_indicator = {
-        "num_trips": pd.DataFrame(series_by_stop, index=rng).fillna(0)
-    }
+    series_by_indicator = {"num_trips": pd.DataFrame(series_by_stop, index=rng).fillna(0)}
 
     # Combine into a single long-form time series per route (and direction if requested);
     # hp.combine_time_series is expected to compute derived fields like service_speed
@@ -565,32 +563,39 @@ def compute_stop_time_series(
 
 def build_stop_timetable(feed: "Feed", stop_id: str, dates: list[str]) -> pd.DataFrame:
     """
-    Return a DataFrame containing the timetable for the given stop ID
-    and dates (YYYYMMDD date strings)
-
-    Return a DataFrame whose columns are all those in ``feed.trips`` plus those in
+    Return a (possibly empty) DataFrame containing the timetable for the given stop ID
+    and dates (YYYYMMDD date strings).
+    The columns are all those in ``feed.trips`` plus those in
     ``feed.stop_times`` plus ``'date'``, and the stop IDs are restricted to the given
     stop ID.
     The result is sorted by date then departure time.
     """
     dates = feed.subset_dates(dates)
     if not dates:
-        return pd.DataFrame()
+        cols = set(feed.trips.columns) | set(feed.stop_times.columns) | {"date"}
+        return pd.DataFrame(columns=list(cols))
 
-    t = pd.merge(feed.trips, feed.stop_times)
-    t = t[t["stop_id"] == stop_id].copy()
-    a = feed.compute_trip_activity(dates)
+    # Get trips that visit the stop
+    st = feed.stop_times.loc[lambda x: x["stop_id"] == stop_id]
+    t = feed.trips.merge(st, on="trip_id")
 
-    frames = []
-    for date in dates:
-        # Slice to stops active on date
-        ids = a.loc[a[date] == 1, "trip_id"]
-        f = t[t["trip_id"].isin(ids)].copy()
-        f["date"] = date
-        frames.append(f)
+    # Restrict to trips active on dates and reshape
+    a_long = (
+        feed.compute_trip_activity(dates)
+        .loc[lambda x: x["trip_id"].isin(t["trip_id"])]
+        .melt(
+            id_vars="trip_id",
+            value_vars=dates,
+            var_name="date",
+            value_name="active",
+        )
+        .loc[lambda x: x["active"] == 1]
+        .filter(["trip_id", "date"])
+    )
 
+    # Format timetable nicely
     return (
-        pd.concat(frames)
+        t.merge(a_long, on="trip_id")
         .assign(dtime=lambda x: x["departure_time"].map(hp.timestr_to_seconds))
         .sort_values(["date", "dtime"], ignore_index=True)
         .drop("dtime", axis=1)
@@ -619,16 +624,11 @@ def stops_to_geojson(feed: "Feed", stop_ids: Iterable[str | None] = None) -> dic
     If an iterable of stop IDs is given, then subset to those stops.
     If some of the given stop IDs are not found in the feed, then raise a ValueError.
     """
-    if stop_ids is None or not list(stop_ids):
-        stop_ids = feed.stops.stop_id
+    g = get_stops(feed, as_gdf=True)
+    if stop_ids is not None:
+        g = g.loc[lambda x: x["stop_id"].isin(stop_ids)]
 
-    D = set(stop_ids) - set(feed.stops.stop_id)
-    if D:
-        raise ValueError(f"Stops {D} are not found in feed.")
-
-    g = get_stops(feed, as_gdf=True).loc[lambda x: x["stop_id"].isin(stop_ids)]
-
-    return hp.drop_feature_ids(json.loads(g.to_json()))
+    return json.loads(g.to_json(drop_id=True))
 
 
 def get_stops_in_area(

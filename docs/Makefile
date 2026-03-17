@@ -6,6 +6,7 @@ SPHINXOPTS    =
 SPHINXBUILD   = sphinx-build
 PAPER         =
 BUILDDIR      = _build
+DOCS_REMOTE   = git@github.com:araichev/gtfs_kit_docs
 
 # User-friendly check for sphinx-build
 ifeq ($(shell which $(SPHINXBUILD) >/dev/null 2>&1; echo $$?), 1)
@@ -19,7 +20,7 @@ ALLSPHINXOPTS   = -d $(BUILDDIR)/doctrees $(PAPEROPT_$(PAPER)) $(SPHINXOPTS) .
 # the i18n builder cannot share the environment and doctrees with the others
 I18NSPHINXOPTS  = $(PAPEROPT_$(PAPER)) $(SPHINXOPTS) .
 
-.PHONY: help clean html dirhtml singlehtml pickle json htmlhelp qthelp devhelp epub latex latexpdf text man changes linkcheck doctest gettext
+.PHONY: help clean html dirhtml singlehtml publish-docs-github pickle json htmlhelp qthelp devhelp epub latex latexpdf text man changes linkcheck doctest gettext
 
 help:
 	@echo "Please use \`make <target>' where <target> is one of"
@@ -47,7 +48,8 @@ help:
 	@echo "  doctest    to run all doctests embedded in the documentation (if enabled)"
 
 clean:
-	rm -rf $(BUILDDIR)/*
+	-rm -rf $(BUILDDIR)/*
+	-rm -f $(EXAMPLES_HTML)
 
 html:
 	$(SPHINXBUILD) -b html $(ALLSPHINXOPTS) $(BUILDDIR)/html
@@ -61,8 +63,19 @@ dirhtml:
 
 singlehtml:
 	$(SPHINXBUILD) -b singlehtml $(ALLSPHINXOPTS) $(BUILDDIR)/singlehtml
+	@out="$(BUILDDIR)/singlehtml/index.html"; \
+	if command -v gsed >/dev/null 2>&1; then SED=gsed; else SED=sed; fi; \
+	$$SED -i.bak -E 's/#document-[^"#]+#/#/g' "$$out" && rm -f "$$out.bak"
 	@echo
 	@echo "Build finished. The HTML page is in $(BUILDDIR)/singlehtml."
+
+
+publish-docs-github: singlehtml
+	@echo "Publishing from '$(BUILDDIR)/singlehtml' to '$(DOCS_REMOTE)' ..."
+	ghp-import --no-jekyll --branch=docs-build "$(BUILDDIR)/singlehtml"
+	git push "$(DOCS_REMOTE)" docs-build:master --force
+	-@git branch -D docs-build >/dev/null 2>&1 || true
+	@echo "✅ Docs published."
 
 pickle:
 	$(SPHINXBUILD) -b pickle $(ALLSPHINXOPTS) $(BUILDDIR)/pickle

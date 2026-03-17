@@ -213,11 +213,11 @@ def test_trips_to_geojson():
     )
     assert len(gj["features"]) == n + k
 
-    with pytest.raises(ValueError):
-        gkt.trips_to_geojson(cairns_shapeless)
+    gj = gkt.trips_to_geojson(cairns, trip_ids=["bingo"])
+    assert not gj["features"]
 
     with pytest.raises(ValueError):
-        gkt.trips_to_geojson(cairns, trip_ids=["bingo"])
+        gkt.trips_to_geojson(cairns_shapeless)
 
 
 def test_map_trips():

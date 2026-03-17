@@ -104,9 +104,7 @@ def append_dist_to_stop_times(feed: "Feed") -> "Feed":
                 )
 
                 # Update dist dictionary with new and improved dists
-                for row in g[["stop_id", "shape_dist_traveled"]].itertuples(
-                    index=False
-                ):
+                for row in g[["stop_id", "shape_dist_traveled"]].itertuples(index=False):
                     dist_by_stop_by_shape[shape][row.stop_id] = row.shape_dist_traveled
 
         return g
@@ -152,37 +150,30 @@ def get_start_and_end_times(feed: "Feed", date: str | None = None) -> list[str]:
 
 def stop_times_to_geojson(
     feed: "Feed",
-    trip_ids: Iterable[str | None] = None,
+    trip_ids: Iterable[str] | None = None,
 ) -> dict:
     """
-    Return a GeoJSON FeatureCollection of Point features
+    Return a GeoJSON FeatureCollection (in WGS84 coordinates) of Point features
     representing all the trip-stop pairs in ``feed.stop_times``.
-    The coordinates reference system is the default one for GeoJSON,
-    namely WGS84.
 
     For every trip, drop duplicate stop IDs within that trip.
     In particular, a looping trip will lack its final stop.
 
-    If an iterable of trip IDs is given, then subset to those trips.
-    If some of the given trip IDs are not found in the feed, then raise a ValueError.
+    If an iterable of trip IDs is given, then subset to those trips, which could yield
+    an empty FeatureCollection in case of all invalid trips.
     """
     from .stops import get_stops
 
-    if trip_ids is None or not list(trip_ids):
-        trip_ids = feed.trips.trip_id
-
-    D = set(trip_ids) - set(feed.trips.trip_id)
-    if D:
-        raise ValueError(f"Trip IDs {D} not found in feed.")
-
-    st = feed.stop_times.loc[lambda x: x.trip_id.isin(trip_ids)]
+    st = feed.stop_times
+    if trip_ids is not None:
+        st = st.loc[lambda x: x.trip_id.isin(trip_ids)]
 
     g = (
         get_stops(feed, as_gdf=True)
-        .loc[lambda x: x["stop_id"].isin(st["stop_id"].unique())]
+        .drop_duplicates("stop_id")
         .merge(st)
         .sort_values(["trip_id", "stop_sequence"])
         .drop_duplicates(subset=["trip_id", "stop_id"])
     )
 
-    return hp.drop_feature_ids(json.loads(g.to_json()))
+    return json.loads(g.to_json(drop_id=True))

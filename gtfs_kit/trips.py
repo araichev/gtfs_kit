@@ -288,7 +288,7 @@ def compute_trip_stats(
         if id_col not in f.columns: f[id_col] = np.nan
 
     f = (
-        f[["route_id", "trip_id", "direction_id", "shape_id", "stop_pattern_name", "block_id"]]
+        f[["route_id", "trip_id", "direction_id", "shape_id", "stop_pattern_name", "block_id", "service_id"]]
         .merge(feed.routes[["route_id", "route_short_name", "route_type"]])
         .merge(feed.stop_times)
         .sort_values(["trip_id", "stop_sequence"])
@@ -309,6 +309,7 @@ def compute_trip_stats(
         d["shape_id"] = group["shape_id"].iat[0]
         d["stop_pattern_name"] = group["stop_pattern_name"].iat[0]
         d["block_id"] = group["block_id"].iat[0]
+        d["service_id"] = group["service_id"].iat[0]
         d["num_stops"] = group.shape[0]
         d["start_time"] = group["departure_time"].iat[0]
         d["end_time"] = group["departure_time"].iat[-1]

@@ -170,6 +170,7 @@ def compute_block_stats_0(
 
     final_cols = [
         "block_id",
+        "service_id",
         "num_trips",
         "num_trip_starts",
         "num_trip_ends",
@@ -200,6 +201,7 @@ def compute_block_stats_0(
 
     # Remove defunct trips
     f = trip_stats.loc[lambda x: x["duration"] > 0].copy()
+    breakpoint()
 
     # Convert trip start and end times to seconds to ease calculations below
     f[["start_time", "end_time"]] = f[["start_time", "end_time"]].map(
@@ -250,7 +252,7 @@ def compute_block_stats_0(
 
     
     g = (
-        f.groupby('block_id')
+        f.groupby(['block_id', 'service_id'])
         .apply(agg, include_groups=False)
         .reset_index()
     )

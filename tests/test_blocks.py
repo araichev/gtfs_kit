@@ -44,6 +44,7 @@ def test_compute_block_stats_0():
 
     expect_cols = set([
         "block_id",
+        "service_id",
         "num_trips",
         "num_trip_starts",
         "num_trip_ends",
@@ -83,6 +84,7 @@ def test_compute_block_stats():
     expect_cols = ["date"] + \
     [
         "block_id",
+        "service_id",
         "num_trips",
         "num_trip_starts",
         "num_trip_ends",
@@ -113,6 +115,7 @@ def test_compute_block_time_series_0():
     expect_cols=set([
         "datetime",
         "block_id",
+        "service_id",
         "num_trips",
         "num_trip_starts",
         "num_trip_ends",
@@ -135,6 +138,7 @@ def test_compute_block_time_series():
     expect_cols=set([
         "datetime",
         "block_id",
+        "service_id",
         "num_trips",
         "num_trip_starts",
         "num_trip_ends",

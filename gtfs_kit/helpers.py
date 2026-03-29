@@ -329,7 +329,9 @@ def combine_time_series(
     elif kind == "stop":
         entity_col = "stop_id"
     else:
-        entity_col = "block_id"
+        # note that block time series are combined on both block_id and service_id.
+        # these are combined as a tuple for processing and then separated into their original column names
+        entity_col = "block_service"
 
     # Wide to long for each indicator
     long_frames: list[pd.DataFrame] = []
@@ -344,7 +346,7 @@ def combine_time_series(
         lambda a, b: pd.merge(a, b, on=["datetime", entity_col], how="outer"),
         long_frames,
     )
-
+    
     # Optionally split direction from encoded IDs "<id>-<dir>"
     if split_directions:
 
@@ -383,7 +385,11 @@ def combine_time_series(
         )
 
     # Arrange columns
-    cols0 = ["datetime", entity_col]
+    if kind == 'block':
+        # special case for blocks, which are grouped by two columns
+        cols0 = ["datetime", "block_id", "service_id"] 
+    else:
+        cols0 = ["datetime", entity_col]
     if split_directions:
         cols0.append("direction_id")
     cols = cols0 + [
@@ -395,6 +401,11 @@ def combine_time_series(
         "service_speed",
     ]
     if active_blocks: cols.append('is_active')
+    # extrapolate block_service back to block_id and service_id
+    if kind == 'block':
+        f = f.assign(block_id = lambda x: x['block_service'].str[0],
+                     service_id = lambda x: x['block_service'].str[1]).drop('block_service', axis=1)
+        
     return f.filter(cols).sort_values(cols0, ignore_index=True)
 
 
@@ -427,7 +438,8 @@ def downsample(time_series: pd.DataFrame, freq: str, active_blocks: bool=False) 
         return f
 
     # Handle generic case
-    id_cols = list({"route_id", "stop_id", "direction_id", "route_type", "block_id"} & set(f.columns))
+    id_cols_all = ["route_id", "stop_id", "direction_id", "route_type", "block_id", "service_id"]
+    id_cols = [col for col in id_cols_all if col in f.columns]
 
     if not id_cols:
         # Network time series without route type

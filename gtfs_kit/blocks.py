@@ -27,29 +27,25 @@ def get_blocks(
     include_date: bool = False
 ) -> pd.DataFrame:
     """
-    Return a set of service blocks for a given data feed.
-    If a YYYYMMDD date string is given, then restrict routes to only those active on
+    Return a set of service blocks for a given data feed. Given a Feed, return a 
+    DataFrame with the columns "block_id" and "service_id". These columns 
+    represent unique block info from feed.trips. 
+    
+    If a YYYYMMDD date string is given, then restrict blocks to only those active on
     the date.
-    If a HH:MM:SS time string is given, possibly with HH > 23, then restrict routes
+    If a HH:MM:SS time string is given, possibly with HH > 23, then restrict blocks
     to only those active during the time.
-
-    Given a Feed, return a GeoDataFrame with the columns "block_id" and "service_id". 
-    These columns represent unique block info from feed.trips. 
     
     If "as_gdf" is specified, also return a geometry column of (Multi)LineStrings, each of 
     which represents the corresponding block's shape.
     If "include_date" is specified, also return a column of the block service date. This
     is intended to ease data merging.
 
-    If ``as_gdf`` and ``feed.shapes`` is not ``None``,
-    then return a GeoDataFrame with all the columns of ``feed.routes``
-    plus a geometry column of (Multi)LineStrings, each of which represents the
-    corresponding routes's union of trip shapes.
+    If ``as_gdf`` and ``feed.shapes`` is not ``None``, then return a GeoDataFrame with 
+    for each block_id / service_id pair with a geometry column of (Multi)LineStrings, each
+    of which represents the corresponding block's union of trip shapes.
     The GeoDataFrame will have a local UTM CRS if ``use_utm``; otherwise it will have
     CRS WGS84.
-    If ``split_directions`` and ``as_gdf``, then add the column ``direction_id`` and
-    split each route into the union of its direction 0 shapes
-    and the union of its direction 1 shapes.
     If ``as_gdf`` and ``feed.shapes`` is ``None``, then raise a ValueError.
     """
     from .trips import get_trips
@@ -127,8 +123,6 @@ def compute_block_stats_0(
     - ``'num_trip_ends'``: number of trips on the block with nonnull
       end times that end before 23:59:59
     - ``'num_stop_patterns'``: number of stop pattern across trips
-    - ``'is_loop'``: 1 if at least one of the trips on the block has
-      its ``is_loop`` field equal to 1; 0 otherwise
     - ``'start_time'``: start time of the earliest trip on the block
     - ``'end_time'``: end time of latest trip on the block
     - ``'max_headway'``: maximum of the durations (in minutes)
@@ -201,7 +195,6 @@ def compute_block_stats_0(
 
     # Remove defunct trips
     f = trip_stats.loc[lambda x: x["duration"] > 0].copy()
-    breakpoint()
 
     # Convert trip start and end times to seconds to ease calculations below
     f[["start_time", "end_time"]] = f[["start_time", "end_time"]].map(
@@ -282,14 +275,12 @@ def compute_block_stats(
     headway_start_time: str = "07:00:00",
     headway_end_time: str = "19:00:00",
     # *,
-    # split_directions: bool = False
 ) -> pd.DataFrame:
     """
     Compute block stats for all the trips that lie in the given subset
     of trip stats, which defaults to ``feed.compute_trip_stats()``,
     and that start on the given dates (YYYYMMDD date strings).
 
-    If ``split_directions``, then separate the stats by trip direction (0 or 1).
     Use the headway start and end times to specify the time period for computing
     headway stats.
 
@@ -303,8 +294,6 @@ def compute_block_stats(
     - ``'num_trip_ends'``: number of trips on the block with nonnull
       end times that end before 23:59:59
     - ``'num_stop_patterns'``: number of stop pattern across trips
-    - ``'is_loop'``: 1 if at least one of the trips on the block has
-      its ``is_loop`` field equal to 1; 0 otherwise
     - ``'start_time'``: start time of the earliest trip on the block
     - ``'end_time'``: end time of latest trip on the block
     - ``'max_headway'``: maximum of the durations (in minutes)
@@ -437,10 +426,10 @@ def compute_block_time_series_0(
       measured in kilometers if ``feed.dist_units`` is metric;
       otherwise measured in miles;
     - ``service_duration``: sum of the service duration accrued
-      during the time bin across all trips on the route;
+      during the time bin across all trips on the block;
       measured in hours
     - ``service_speed``: ``service_distance/service_duration``
-      for the route
+      for the block
 
     Notes
     -----
@@ -468,6 +457,7 @@ def compute_block_time_series_0(
     final_cols = [
         "datetime",
         "block_id",
+        "service_d",
         "num_trips",
         "num_trip_starts",
         "num_trip_ends",
@@ -511,7 +501,7 @@ def compute_block_time_series_0(
     tss["end_index"] = tss["end_time"].map(timestr_to_min)
 
     # Bin each trip according to its start and end time and weight
-    blocks = sorted(tss["block_id"].dropna().unique().tolist())
+    blocks = tss[['block_id', 'service_id']].dropna().drop_duplicates().apply(tuple, axis=1).to_list()
     series_by_block_by_indicator = {
         indicator: {block: [0 for i in range(num_bins)] for block in blocks}
         for indicator in indicators
@@ -522,6 +512,8 @@ def compute_block_time_series_0(
     
     for row in tss.itertuples(index=False):
         block = row.block_id
+        service = row.service_id
+        block_service = (block, service)
         start = row.start_index
         end = row.end_index
         distance = row.distance
@@ -538,13 +530,13 @@ def compute_block_time_series_0(
 
         # Bin trip and calculate indicators.
         # Num trip starts.
-        series_by_block_by_indicator["num_trip_starts"][block][start] += 1
+        series_by_block_by_indicator["num_trip_starts"][block_service][start] += 1
 
         # Num trip ends.
         # Don't mark trip ends for trips that run past midnight;
         # allows for easy resampling of num_trips later.
         if start <= end:
-            series_by_block_by_indicator["num_trip_ends"][block][end] += 1
+            series_by_block_by_indicator["num_trip_ends"][block_service][end] += 1
 
         # Do rest of indicators
         for indicator in indicators[2:]:
@@ -555,7 +547,7 @@ def compute_block_time_series_0(
             else:
                 weight = distance / len(bins_to_fill)
             for b in bins_to_fill:
-                series_by_block_by_indicator[indicator][block][b] += weight
+                series_by_block_by_indicator[indicator][block_service][b] += weight
 
     if active_blocks:
         indicator = 'is_active'
@@ -566,6 +558,8 @@ def compute_block_time_series_0(
         bss["end_index"] = bss["end_time"].map(timestr_to_min)
         for row in bss.itertuples(index=False):
             block = row.block_id
+            service = row.service_id
+            block_service = (block, service)
             start = row.start_index
             end = row.end_index
     
@@ -580,26 +574,34 @@ def compute_block_time_series_0(
                 bins_to_fill = bins[start:] + bins[:end]
             
             for b in bins_to_fill:
-                series_by_block_by_indicator[indicator][block][b] += 1
+                series_by_block_by_indicator[indicator][block_service][b] += 1
         
 
     # Build per-indicator DataFrames indexed by minute across the provided date
     rng = pd.date_range(
         pd.to_datetime(f"{date_label} 00:00:00"), periods=24 * 60, freq="Min"
     )
-    series_by_indicator = {
+    '''series_by_indicator = {
         indicator: pd.DataFrame(
             series_by_block_by_indicator[indicator], index=rng
         ).fillna(0)
         for indicator in indicators
-    }
+    }'''
+    series_by_indicator = {}
+    for indicator in indicators:
+        df = pd.DataFrame(series_by_block_by_indicator[indicator], index=rng).fillna(0)
+        df.columns = df.columns.to_flat_index()
+        series_by_indicator[indicator] = df
+        
 
     # Combine into a single long-form time series per block (and direction if requested);
     # hp.combine_time_series is expected to compute derived fields like service_speed
+    
     g = hp.combine_time_series(
         series_by_indicator, kind="block", active_blocks=active_blocks
     )
     # Downsample to requested frequency (sum for counts/durations/distances; speed handled by helper)
+    
     ds = hp.downsample(g, freq=freq, active_blocks=active_blocks)
     # is_active is a boolean indicator
     if active_blocks: 
@@ -614,7 +616,6 @@ def compute_block_time_series(
     freq: str = "h",
     active_blocks: bool = False
     # *,
-    # split_directions: bool = False,
 ) -> pd.DataFrame:
     """
     Compute block stats in time series form for the trips that lie in

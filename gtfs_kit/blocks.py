@@ -3,11 +3,9 @@ Functions about blocks.
 """
 from __future__ import annotations
 
-from functools import reduce
-from typing import TYPE_CHECKING, Callable, List
+from typing import TYPE_CHECKING, Callable
 
 import warnings
-import datetime as dt
 import numpy as np
 import pandas as pd
 
@@ -62,7 +60,6 @@ def get_blocks(
     if not as_gdf:
         f = trips[final_cols].drop_duplicates(ignore_index=True) 
 
-    
     else:
         if feed.shapes is None:
             raise ValueError("This Feed has no shapes.")
@@ -85,13 +82,10 @@ def get_blocks(
 
         f = (
             trips
-            # Not dropping unnecessary duplicate shapes as there may be shared geometries between blocks
-            #.drop_duplicates(subset=["shape_id", "route_id"])
             .filter(groupby_cols + ["geometry"])
             .groupby(groupby_cols)
             .apply(merge_lines, include_groups=False)
             .reset_index()
-            # .merge(f, how="right")
             .pipe(gpd.GeoDataFrame)
             .set_crs(trips.crs)
             .filter(final_cols)
@@ -117,6 +111,7 @@ def compute_block_stats_0(
     Return a DataFrame with the columns
 
     - ``'block_id'``
+    - ``'service_id'``
     - ``'num_trips'``: number of trips on the block in the subset
     - ``'num_trip_starts'``: number of trips on the block with
       nonnull start times
@@ -133,9 +128,7 @@ def compute_block_stats_0(
       mentioned above
     - ``'mean_headway'``: mean of the durations (in minutes)
       mentioned above
-    - ``'peak_num_trips'``: maximum number of simultaneous trips in
-      service (for the given direction, or for both directions when
-      ``split_directions==False``)
+    - ``'peak_num_trips'``: maximum number of simultaneous trips in service
     - ``'peak_start_time'``: start time of first longest period
       during which the peak number of trips occurs
     - ``'peak_end_time'``: end time of first longest period during
@@ -154,11 +147,7 @@ def compute_block_stats_0(
     If ``trip_stats`` is empty, return an empty DataFrame.
 
     Unlike routes, blocks are not bidirectional, and encompass a set
-    order of trips for each unique block_id/service_id pair. For headways, 
-    (1) compute max headway by taking the max of the
-    max headways in both directions; (2) compute mean headway by
-    taking the weighted mean of the mean headways in both
-    directions.
+    order of trips for each unique block_id/service_id pair.
     """
 
 
@@ -274,7 +263,6 @@ def compute_block_stats(
     trip_stats: pd.DataFrame | None = None,
     headway_start_time: str = "07:00:00",
     headway_end_time: str = "19:00:00",
-    # *,
 ) -> pd.DataFrame:
     """
     Compute block stats for all the trips that lie in the given subset
@@ -288,6 +276,7 @@ def compute_block_stats(
 
     - ``'date'``
     - ``'block_id'``
+    - ``'service_id'``
     - ``'num_trips'``: number of trips on the block in the subset
     - ``'num_trip_starts'``: number of trips on the block with
       nonnull start times
@@ -304,9 +293,7 @@ def compute_block_stats(
       mentioned above
     - ``'mean_headway'``: mean of the durations (in minutes)
       mentioned above
-    - ``'peak_num_trips'``: maximum number of simultaneous trips in
-      service (for the given direction, or for both directions when
-      ``split_directions==False``)
+    - ``'peak_num_trips'``: maximum number of simultaneous trips in service
     - ``'peak_start_time'``: start time of first longest period
       during which the peak number of trips occurs
     - ``'peak_end_time'``: end time of first longest period during
@@ -326,11 +313,7 @@ def compute_block_stats(
     Exclude dates with no active trips, which could yield the empty DataFrame.
 
     Unlike routes, blocks are not bidirectional, and encompass a set
-    order of trips for each unique block_id/service_id pair. For headways, 
-    (1) compute max headway by taking the max of the
-    max headways in both directions; (2) compute mean headway by
-    taking the weighted mean of the mean headways in both
-    directions.
+    order of trips for each unique block_id/service_id pair.
 
     Notes
     -----
@@ -390,7 +373,7 @@ def compute_block_stats(
             frames.append(stats)
 
     # Collate stats
-    sort_by = ["date", "block_id"]
+    sort_by = ["date", "block_id", "service_id"]
     if empty_block_dates:
         warnings.warn(f"The following dates had no active blocks and thus are not included in the output: {empty_block_dates}", stacklevel=2)
     if not frames:
@@ -415,6 +398,7 @@ def compute_block_time_series_0(
 
     - ``datetime``: datetime object
     - ``block_id``
+    - ``service_id``
     - ``num_trips``: number of trips in service on the block
       at any time within the time bin
     - ``num_trip_starts``: number of trips that start within
@@ -457,7 +441,7 @@ def compute_block_time_series_0(
     final_cols = [
         "datetime",
         "block_id",
-        "service_d",
+        "service_id",
         "num_trips",
         "num_trip_starts",
         "num_trip_ends",
@@ -582,12 +566,7 @@ def compute_block_time_series_0(
     rng = pd.date_range(
         pd.to_datetime(f"{date_label} 00:00:00"), periods=24 * 60, freq="Min"
     )
-    '''series_by_indicator = {
-        indicator: pd.DataFrame(
-            series_by_block_by_indicator[indicator], index=rng
-        ).fillna(0)
-        for indicator in indicators
-    }'''
+
     series_by_indicator = {}
     for indicator in indicators:
         df = pd.DataFrame(series_by_block_by_indicator[indicator], index=rng).fillna(0)
@@ -616,7 +595,6 @@ def compute_block_time_series(
     trip_stats: pd.DataFrame | None = None,
     freq: str = "h",
     active_blocks: bool = False
-    # *,
 ) -> pd.DataFrame:
     """
     Compute block stats in time series form for the trips that lie in
@@ -630,6 +608,7 @@ def compute_block_time_series(
 
     - ``datetime``: datetime object
     - ``block_id``
+    - ``service_id``
     - ``num_trips``: number of trips in service on the block
       at any time within the time bin
     - ``num_trip_starts``: number of trips that start within
@@ -658,8 +637,6 @@ def compute_block_time_series(
     - If you've already computed trip stats in your workflow, then you should pass
       that table into this function to speed things up significantly.
     - See the notes for :func:`compute_block_time_series_0`
-    - Raise a ValueError if ``split_directions`` and no non-null
-      direction ID values present
 
     """
     dates = feed.subset_dates(dates)

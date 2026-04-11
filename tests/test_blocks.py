@@ -153,3 +153,8 @@ def test_compute_block_time_series():
     expect_cols2=set(expect_cols2 + ['is_active'])
     bts2 = feed.compute_block_time_series(sample_week, trip_stats=ts, active_blocks=True)
     assert set(bts2.columns) == expect_cols2
+
+    # The number of period with active blocks in a time series should
+    # always be more than or equual to the number of periods with
+    # active trips.
+    assert bts2['is_active'].sum() >= (bts2['num_trips'] > 0).sum()

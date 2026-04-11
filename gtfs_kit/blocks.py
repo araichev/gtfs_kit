@@ -568,14 +568,15 @@ def compute_block_time_series_0(
                 continue
     
             # Get bins to fill
+            # Adding 1 to end time because a block is "active" during the last minute of service.
+            # This also is consistent with how the "num_trip_ends" indicator is processed.
             if start < end:
-                bins_to_fill = bins[start:end]
+                bins_to_fill = bins[start:end+1]
             else:
-                bins_to_fill = bins[start:] + bins[:end]
+                bins_to_fill = bins[start:] + bins[:end+1]
             
             for b in bins_to_fill:
                 series_by_block_by_indicator[indicator][block_service][b] += 1
-        
 
     # Build per-indicator DataFrames indexed by minute across the provided date
     rng = pd.date_range(

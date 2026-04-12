@@ -418,8 +418,11 @@ def compute_block_time_series_0(
     Notes
     -----
     - If "active_blocks" is True, add an "is_active" column
-      indicating whether the block is active during the time bin, as
-      determined by block start/end times from compute_block_stats_0.
+      indicating whether the block is active during the time bin.
+      A block is active if the time bin lies between the start of the
+      block's first trip and the end of the block's last trip (inclusive),
+      as determined by block start/end times from :func:`compute_block_stats_0`.
+      This includes any idle gaps between trips.
     - Trips that lack start or end times are ignored, so the the
       aggregate ``num_trips`` across the day could be less than the
       ``num_trips`` column of :func:`compute_block_stats_0`
@@ -574,7 +577,7 @@ def compute_block_time_series_0(
         series_by_indicator[indicator] = df
         
 
-    # Combine into a single long-form time series per block (and direction if requested);
+    # Combine into a single long-form time series per block;
     # hp.combine_time_series is expected to compute derived fields like service_speed
     
     g = hp.combine_time_series(
@@ -632,8 +635,11 @@ def compute_block_time_series(
     Notes
     -----
     - If "active_blocks" is True, add an "is_active" column
-      indicating whether the block is active during the time bin, as
-      determined by block start/end times from compute_block_stats_0.
+      indicating whether the block is active during the time bin.
+      A block is active if the time bin lies between the start of the
+      block's first trip and the end of the block's last trip (inclusive),
+      as determined by block start/end times from :func:`compute_block_stats_0`.
+      This includes any idle gaps between trips.
     - If you've already computed trip stats in your workflow, then you should pass
       that table into this function to speed things up significantly.
     - See the notes for :func:`compute_block_time_series_0`

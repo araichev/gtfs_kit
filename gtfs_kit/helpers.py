@@ -403,8 +403,8 @@ def combine_time_series(
     if active_blocks: cols.append('is_active')
     # extrapolate block_service back to block_id and service_id
     if kind == 'block':
-        f = f.assign(block_id = lambda x: x['block_service'].str[0],
-                     service_id = lambda x: x['block_service'].str[1]).drop('block_service', axis=1)
+        f[['block_id', 'service_id']] = pd.DataFrame(f['block_service'].tolist(), index=f.index)
+        f = f.drop('block_service', axis=1)
         
     return f.filter(cols).sort_values(cols0, ignore_index=True)
 

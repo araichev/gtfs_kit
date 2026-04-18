@@ -42,7 +42,7 @@ def merge_feeds(  # TODO: Sketched this out, to complete.
         prefix_0: Prefix to add to all IDs in feed_0
         prefix_1: Prefix to add to all IDs in feed_1
         merge_similar_stops: Merge stops with matching IDs
-        merge_similar_routes: Merge routes with same attributes
+        merge_similar_routes: Merge routes with similar attributes
         merge_similar_calendars: Merge calendars with same service patterns
         **kwargs: Additional keyword arguments
 
@@ -64,9 +64,9 @@ def merge_feeds(  # TODO: Sketched this out, to complete.
 
     if merge_similar_routes:
         pass
-        # p_fd0, p_fd1, conflicts['routes'] = _merge_similar_routes(
-        #     p_fd0, p_fd1
-        # )
+        p_fd0, p_fd1, conflicts['routes'] = merge_similar_routes(
+            p_fd0, p_fd1
+        )
 
     if merge_similar_calendars:
         pass
@@ -105,10 +105,7 @@ def remap_ids(feed: Feed, id_mapping: Dict[str, str], id_type: str) -> Feed:
 
 
 def merge_similar_stops(
-    feed_0: Feed,
-    feed_1: Feed,
-    prefix_0: str="",
-    prefix_1: str=""
+    feed_0: Feed, feed_1: Feed, prefix_0: str="", prefix_1: str=""
 ) -> tuple[Feed, Feed, list[dict]]:
     """
     Merge stops with matching IDs after removing prefixes
@@ -119,36 +116,73 @@ def merge_similar_stops(
 
     conflicts = []
 
-    if feed_0.stops is None or feed_1.stops is None:
-        return feed_0, feed_1, conflicts
-
     s0 = feed_0.stops.copy().set_index('stop_id')
     s1 = feed_1.stops.copy().set_index('stop_id')
 
-    # Create a helper column for matching
-    s0['base_id'] = [i[len(prefix_0):] if i.startswith(prefix_0) else None for i in s0.index]
-    s1['base_id'] = [i[len(prefix_1):] if i.startswith(prefix_1) else None for i in s1.index]
+    # create a helper column for matching
+    s0['match_key'] = [i[len(prefix_0):] if i.startswith(prefix_0) else None for i in s0.index]
+    s1['match_key'] = [i[len(prefix_1):] if i.startswith(prefix_1) else None for i in s1.index]
 
-    # Find where base_ids overlap (excluding None)
+    # find where base_ids overlap (excluding None)
     matches = s1.reset_index().merge(
-        s0.reset_index()[['stop_id', 'base_id', 'stop_name']],
-        on='base_id',
+        s0.reset_index()[['stop_id', 'match_key', 'stop_name']],
+        on='match_key',
         suffixes=('_1', '_0')
-    ).dropna(subset=['base_id'])
+    ).dropna(subset=['match_key'])
 
     if matches.empty:
         return feed_0, feed_1, []
 
-    # Create the mapping for _remap_ids
+    # create the mapping for remap_ids
     stop_mapping = dict(zip(matches['stop_id_1'], matches['stop_id_0']))
 
     conflicts = matches[[
-        'stop_id_0', 'stop_id_1', 'base_id', 'stop_name_0', 'stop_name_1'
+        'stop_id_0', 'stop_id_1', 'match_key', 'stop_name_0', 'stop_name_1'
     ]].to_dict('records')
 
-    # Update feed_1 references
+    # remap and cleanup
     fd1 = feed_1.remap_ids(stop_mapping, 'stop_id')
-
     fd1.stops = fd1.stops[~fd1.stops['stop_id'].isin(stop_mapping.keys())]
+
+    return feed_0, fd1, conflicts
+
+
+def merge_similar_routes(
+    feed_0: Feed, feed_1: Feed
+) -> tuple[Feed, Feed, list[dict]]:
+    """
+    Merge routes based on Agency, Short Name (or Long Name), and Type.
+    """
+    conflicts = []
+
+    r0 = feed_0.routes.copy()
+    r1 = feed_1.routes.copy()
+
+    def match_key(df):  # helper column for matching
+        name_col = df['route_short_name'].fillna(df['route_long_name'])
+        return name_col.astype(str) + "_" + df['route_type'].astype(str)
+
+    r0['match_key'] = match_key(r0)
+    r1['match_key'] = match_key(r1)
+
+    matches = r1.merge(
+        r0[['route_id', 'match_key', 'route_short_name', 'route_type']],
+        on='match_key',
+        suffixes=('_1', '_0')
+    )
+
+    if matches.empty:
+        return feed_0, feed_1, []
+
+    # create mapping and conflict report
+    route_mapping = dict(zip(matches['route_id_1'], matches['route_id_0']))
+
+    conflicts = matches[[
+        'route_id_0', 'route_id_1', 'route_short_name_0', 'route_type_0'
+    ]].to_dict('records')
+
+    # remap and cleanup
+    fd1 = feed_1.remap_ids(route_mapping, 'route_id')
+    fd1.routes = fd1.routes[~fd1.routes['route_id'].isin(route_mapping.keys())]
 
     return feed_0, fd1, conflicts

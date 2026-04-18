@@ -250,6 +250,7 @@ _FEED_METHODS = {
     # merge
     "remap_ids": mg.remap_ids,
     "merge_similar_stops": mg.merge_similar_stops,
+    "merge_similar_routes": mg.merge_similar_routes,
     # miscellany
     "assess_quality": ms.assess_quality,
     "compute_bounds": ms.compute_bounds,

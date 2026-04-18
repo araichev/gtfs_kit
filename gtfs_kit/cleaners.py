@@ -55,14 +55,14 @@ def clean_ids(feed: "Feed") -> "Feed":
     return feed
 
 
-def extend_id(feed: "Feed", id_col: str, extension: str, *, prefix=True) -> "Feed":
+def extend_id(feed: Feed, id_col: str, extension: str, *, prefix=True) -> "Feed":
     """
     Add a prefix (if ``prefix``) or a suffix (otherwise) to all values of column
     ``id_col`` across all tables of this Feed.
     This can be helpful when preparing to merge multiple GTFS feeds with colliding
     route IDs, say.
 
-    Raises a ValueError if ``id_col`` values are strings,
+    Raises a ValueError if ``id_col`` values are not strings,
     e.g. if ``id_col`` is 'direction_id'.
     """
     feed = feed.copy()
@@ -77,6 +77,25 @@ def extend_id(feed: "Feed", id_col: str, extension: str, *, prefix=True) -> "Fee
                 setattr(feed, table, t)
 
     return feed
+
+
+def prefix_feed_ids(feed: Feed, prefix: str) -> Feed:
+    """
+    Add a ``prefix`` to all ID columns in a feed.
+    See ``cs.ID_FIELDS``.
+    """
+    fd = feed.copy()
+
+    for id_col in cs.ID_FIELDS:
+        for table in cs.DTYPES:
+            t = getattr(feed, table)
+            if t is None:
+                continue
+
+            if id_col in t.columns:
+                fd = fd.extend_id(id_col, prefix, prefix=True)
+
+    return fd
 
 
 def clean_times(feed: "Feed") -> "Feed":

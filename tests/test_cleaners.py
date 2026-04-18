@@ -3,6 +3,7 @@ import pytest
 from pandas.testing import assert_frame_equal, assert_series_equal
 
 from gtfs_kit import cleaners as gkc
+from gtfs_kit import constants as cn
 from gtfs_kit import helpers as hp
 
 from .context import gtfs_kit, sample
@@ -46,6 +47,14 @@ def test_extend_id():
 
     with pytest.raises(ValueError):
         gkc.extend_id(f2, "direction_id", "_suffix", prefix=False)
+
+
+def test_prefix_feed_ids():
+    prefix = "0_"
+    f1 = sample.copy()
+    f2 = gkc.prefix_feed_ids(f1, prefix)
+    assert f2.routes.route_id.str.startswith(prefix).all()
+    assert f2.agency.agency_id.str.startswith(prefix).all()
 
 
 def test_clean_times():

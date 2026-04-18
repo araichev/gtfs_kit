@@ -138,6 +138,25 @@ DTYPES = {
     },
 }
 
+#: ID fields for merging
+ID_FIELDS = [
+    'agency_id',
+    'attribution_id',
+    'stop_id',
+    'route_id',
+    'trip_id',
+    'service_id',
+    'shape_id',
+    'fare_id',
+    'zone_id',
+    'origin_id',
+    'destination_id',
+    'parent_station',
+    'from_stop_id',
+    'to_stop_id',
+    'block_id'
+]
+
 #: Valid distance units
 DIST_UNITS = ["ft", "mi", "m", "km"]
 

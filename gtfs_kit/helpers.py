@@ -393,7 +393,7 @@ def combine_time_series(
 
 def downsample(time_series: pd.DataFrame, freq: str) -> pd.DataFrame:
     """
-    Downsample the given stop, route,  or network time series,
+    Downsample the given stop, route, or network time series,
     (outputs of :func:`.stops.compute_stop_time_series`,
     :func:`.routes.compute_route_time_series`, or
     :func:`.miscellany.compute_network_time_series`,

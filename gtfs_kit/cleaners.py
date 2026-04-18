@@ -69,7 +69,10 @@ def extend_id(feed: Feed, id_col: str, extension: str, *, prefix=True) -> "Feed"
 
     for table, d in cs.DTYPES.items():
         t = getattr(feed, table)
-        if t is not None and id_col in d:
+        if t is None:
+            continue
+
+        if id_col in d:
             if d[id_col] != "string":
                 raise ValueError(f"{id_col} must be a string column")
             else:
@@ -82,7 +85,7 @@ def extend_id(feed: Feed, id_col: str, extension: str, *, prefix=True) -> "Feed"
 def prefix_feed_ids(feed: Feed, prefix: str) -> Feed:
     """
     Add a ``prefix`` to all ID columns in a feed.
-    See ``cs.ID_FIELDS``.
+    See :const:``.constants.ID_FIELDS``.
     """
     fd = feed.copy()
 

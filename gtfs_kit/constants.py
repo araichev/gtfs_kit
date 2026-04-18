@@ -157,6 +157,30 @@ ID_FIELDS = [
     'block_id'
 ]
 
+#: ID to (file, id_col) for ID remapping
+ID_REMAP = {
+    'stop_id': [
+        ('stops', 'stop_id'),
+        ('stop_times', 'stop_id'),
+        ('transfers', 'from_stop_id'),
+        ('transfers', 'to_stop_id'),
+        # ('pathways', 'from_stop_id'),
+        # ('pathways', 'to_stop_id'),
+        ('stops', 'parent_station')
+    ],
+    'route_id': [
+        ('routes', 'route_id'),
+        ('trips', 'route_id'),
+        ('fare_rules', 'route_id'),
+        ('attributions', 'route_id')
+    ],
+    'service_id': [
+        ('calendar', 'service_id'),
+        ('trips', 'service_id'),
+        ('calendar_dates', 'service_id')
+    ]
+}
+
 #: Valid distance units
 DIST_UNITS = ["ft", "mi", "m", "km"]
 

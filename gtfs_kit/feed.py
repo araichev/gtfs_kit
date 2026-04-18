@@ -23,6 +23,7 @@ from . import constants as cs
 from . import calendar as cl
 from . import cleaners as cn
 from . import helpers as hp
+from . import merge as mg
 from . import miscellany as ms
 from . import routes as rt
 from . import shapes as shp
@@ -246,6 +247,9 @@ _FEED_METHODS = {
     "drop_invalid_columns": cn.drop_invalid_columns,
     "drop_zombies": cn.drop_zombies,
     "extend_id": cn.extend_id,
+    # merge
+    "remap_ids": mg.remap_ids,
+    "merge_similar_stops": mg.merge_similar_stops,
     # miscellany
     "assess_quality": ms.assess_quality,
     "compute_bounds": ms.compute_bounds,

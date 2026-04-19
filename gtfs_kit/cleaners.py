@@ -44,9 +44,7 @@ def clean_ids(feed: "Feed") -> "Feed":
         for column in d:
             if column in f.columns and column.endswith("_id"):
                 try:
-                    f[column] = (
-                        f[column].str.strip().str.replace(r"\s+", "_", regex=True)
-                    )
+                    f[column] = f[column].str.strip().str.replace(r"\s+", "_", regex=True)
                     setattr(feed, table, f)
                 except AttributeError:
                     # Column is not of string type
@@ -90,13 +88,18 @@ def prefix_feed_ids(feed: Feed, prefix: str) -> Feed:
     fd = feed.copy()
 
     for id_col in cs.ID_FIELDS:
+        exists_in_feed = False
         for table in cs.DTYPES:
             t = getattr(feed, table)
             if t is None:
                 continue
 
             if id_col in t.columns:
-                fd = fd.extend_id(id_col, prefix, prefix=True)
+                exists_in_feed = True
+                break
+
+        if exists_in_feed:
+            fd = fd.extend_id(id_col, prefix, prefix=True)
 
     return fd
 
@@ -163,9 +166,7 @@ def drop_zombies(feed: "Feed") -> "Feed":
     if "parent_station" in feed.stops.columns:
         f = feed.stops.copy()
         ids = f["stop_id"].unique()
-        f["parent_station"] = f["parent_station"].map(
-            lambda x: x if x in ids else np.nan
-        )
+        f["parent_station"] = f["parent_station"].map(lambda x: x if x in ids else np.nan)
         feed.stops = f
 
     # Drop trips with no stop times
@@ -176,9 +177,9 @@ def drop_zombies(feed: "Feed") -> "Feed":
     # Drop shapes with no trips
     f = feed.shapes
     if f is not None:
-        feed.shapes = f[
-            f["shape_id"].isin(feed.trips["shape_id"].unique())
-        ].reset_index(drop=True)
+        feed.shapes = f[f["shape_id"].isin(feed.trips["shape_id"].unique())].reset_index(
+            drop=True
+        )
 
     # Drop routes with no trips
     f = feed.routes
@@ -373,8 +374,8 @@ def clean_parent_stations(feed: Feed) -> Feed:
     """
     if (
         feed.stops is None
-        or 'parent_station' not in feed.stops.columns
-        or 'location_type' not in feed.stops.columns
+        or "parent_station" not in feed.stops.columns
+        or "location_type" not in feed.stops.columns
     ):
         return feed
 
@@ -382,20 +383,21 @@ def clean_parent_stations(feed: Feed) -> Feed:
     stops = fd.stops.copy()
 
     # determine valid parent stations
-    valid_stop_ids = set(stops['stop_id'])
+    valid_stop_ids = set(stops["stop_id"])
     station_ids = (
-        set(stops[stops['location_type'] == 1]['stop_id'])
-        if 'location_type' in stops.columns else valid_stop_ids
+        set(stops[stops["location_type"] == 1]["stop_id"])
+        if "location_type" in stops.columns
+        else valid_stop_ids
     )
 
     # clear invalid parent_station references
-    invalid_mask = (
-        stops['parent_station'].notna() &
-        (~stops['parent_station'].isin(station_ids) | ~stops['parent_station'].isin(valid_stop_ids))
+    invalid_mask = stops["parent_station"].notna() & (
+        ~stops["parent_station"].isin(station_ids)
+        | ~stops["parent_station"].isin(valid_stop_ids)
     )
 
     if invalid_mask.any():
-        stops.loc[invalid_mask, 'parent_station'] = pd.NA
+        stops.loc[invalid_mask, "parent_station"] = pd.NA
 
     fd.stops = stops
     return fd

@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.17.0"
+__generated_with = "0.20.4"
 app = marimo.App(width="medium")
 
 
@@ -188,6 +188,21 @@ def _(dates, feed_1, screen_line, trip_id):
 
     slc = feed_1.compute_screen_line_counts(screen_line, dates=dates)
     slc.loc[lambda x: x["trip_id"] == trip_id]
+    return
+
+
+@app.cell
+def _(feed_1):
+    # Merge feeds
+
+    f0 = feed_1.restrict_to_routes(["110N-423"])
+    f1 = feed_1.restrict_to_routes(["110N-423", "121-423"])
+
+
+    f2, conflicts = f0.merge_feeds(f1)
+
+    f2.map_routes(route_short_names=["110N", "121"], show_stops=True)
+    # conflicts["routes"], conflicts["calendars"]
     return
 
 

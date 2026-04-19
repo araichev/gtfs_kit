@@ -140,45 +140,45 @@ DTYPES = {
 
 #: ID fields for merging
 ID_FIELDS = [
-    'agency_id',
-    'attribution_id',
-    'stop_id',
-    'route_id',
-    'trip_id',
-    'service_id',
-    'shape_id',
-    'fare_id',
-    'zone_id',
-    'origin_id',
-    'destination_id',
-    'parent_station',
-    'from_stop_id',
-    'to_stop_id',
-    'block_id'
+    "agency_id",
+    "attribution_id",
+    "stop_id",
+    "route_id",
+    "trip_id",
+    "service_id",
+    "shape_id",
+    "fare_id",
+    "zone_id",
+    "origin_id",
+    "destination_id",
+    "parent_station",
+    "from_stop_id",
+    "to_stop_id",
+    "block_id",
 ]
 
 #: ID to (file, id_col) for ID remapping
 ID_REMAP = {
-    'stop_id': [
-        ('stops', 'stop_id'),
-        ('stop_times', 'stop_id'),
-        ('transfers', 'from_stop_id'),
-        ('transfers', 'to_stop_id'),
+    "stop_id": [
+        ("stops", "stop_id"),
+        ("stop_times", "stop_id"),
+        ("transfers", "from_stop_id"),
+        ("transfers", "to_stop_id"),
         # ('pathways', 'from_stop_id'),
         # ('pathways', 'to_stop_id'),
-        ('stops', 'parent_station')
+        ("stops", "parent_station"),
     ],
-    'route_id': [
-        ('routes', 'route_id'),
-        ('trips', 'route_id'),
-        ('fare_rules', 'route_id'),
-        ('attributions', 'route_id')
+    "route_id": [
+        ("routes", "route_id"),
+        ("trips", "route_id"),
+        ("fare_rules", "route_id"),
+        ("attributions", "route_id"),
     ],
-    'service_id': [
-        ('calendar', 'service_id'),
-        ('trips', 'service_id'),
-        ('calendar_dates', 'service_id')
-    ]
+    "service_id": [
+        ("calendar", "service_id"),
+        ("trips", "service_id"),
+        ("calendar_dates", "service_id"),
+    ],
 }
 
 #: Valid distance units

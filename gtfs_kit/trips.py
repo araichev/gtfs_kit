@@ -38,9 +38,11 @@ def get_active_services(feed: "Feed", date: str) -> list[str]:
         # Filter `calendar` to services active on date
         active_services |= set(
             feed.calendar.loc[
-                lambda x: (x["start_date"] <= date)
-                & (x["end_date"] >= date)
-                & (x[weekday_str] == 1),
+                lambda x: (
+                    (x["start_date"] <= date)
+                    & (x["end_date"] >= date)
+                    & (x[weekday_str] == 1)
+                ),
                 "service_id",
             ]
         )

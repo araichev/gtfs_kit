@@ -249,6 +249,7 @@ _FEED_METHODS = {
     "extend_id": cn.extend_id,
     # merge
     "remap_ids": mg.remap_ids,
+    "merge_feeds": mg.merge_feeds,
     "merge_similar_stops": mg.merge_similar_stops,
     "merge_similar_routes": mg.merge_similar_routes,
     "merge_similar_calendars": mg.merge_similar_calendars,

@@ -482,10 +482,12 @@ def downsample(time_series: pd.DataFrame, freq: str) -> pd.DataFrame:
                 .dropna()
                 # Compute service speed now
                 .assign(
-                    service_speed=lambda x: x["service_distance"]
-                    .div(x["service_duration"])
-                    .replace([np.inf, -np.inf], np.nan)
-                    .fillna(0.0)
+                    service_speed=lambda x: (
+                        x["service_distance"]
+                        .div(x["service_duration"])
+                        .replace([np.inf, -np.inf], np.nan)
+                        .fillna(0.0)
+                    )
                 )
                 # Bring back 'datetime' column
                 .reset_index()

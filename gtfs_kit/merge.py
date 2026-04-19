@@ -68,20 +68,19 @@ def merge_feeds(  # TODO: Sketched this out, to complete.
         )
 
     if merge_similar_calendars:
-        pass
-        # p_fd0, p_fd1, conflicts['calendars'] = _merge_similar_calendars(
-        #     feed_0_prefixed, feed_1_prefixed
-        # )
+        p_fd0, p_fd1, conflicts['calendars'] = merge_similar_calendars(
+            p_fd0, p_fd1
+        )
 
     # TODO: add option for merging stops by distance
 
     # Concatenate tables
-    # merged_feed = _concatenate_feeds(p_fd0, p_fd1)
+    merged_feed = concatenate_feeds(p_fd0, p_fd1)
 
-    # # Clean parent_station references
-    # # merged_feed = _cleanup_parent_stations(merged_feed)
+    # Clean parent_station references
+    # # merged_feed = cleanup_parent_stations(merged_feed)
 
-    # return merged_feed, conflicts
+    return merged_feed, conflicts
 
 
 def remap_ids(feed: Feed, id_mapping: Dict[str, str], id_type: str) -> Feed:
@@ -228,3 +227,24 @@ def merge_similar_calendars(
     return feed_0, fd1, conflicts
 
 
+def concatenate_feeds(feed_0: Feed, feed_1: Feed) -> Feed:
+    """
+    Concatenate two feeds by combining all their tables.
+    """
+    fd = feed_0.copy()
+
+    # merge each table
+    for table_name in cs.DTYPES:
+        df_0 = getattr(feed_0, table_name, None)
+        df_1 = getattr(feed_1, table_name, None)
+
+        if df_0 is not None and df_1 is not None:
+            setattr(fd, table_name, pd.concat([df_0, df_1], ignore_index=True))
+        elif df_0 is not None:
+            setattr(fd, table_name, df_0.copy())
+        elif df_1 is not None:
+            setattr(fd, table_name, df_1.copy())
+        else:
+            setattr(fd, table_name, None)
+
+    return fd

@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 import pytest
 from pandas.testing import assert_frame_equal, assert_series_equal
 
@@ -85,6 +86,30 @@ def test_clean_route_short_names():
     # Should have names without leading or trailing whitespace
     assert not f2.routes["route_short_name"].str.startswith(" ").any()
     assert not f2.routes["route_short_name"].str.endswith(" ").any()
+
+
+def test_clean_parent_stations():
+    fd = sample.copy()
+    stops = fd.stops.copy()
+
+    # setup: 'S1' is a stop (type 0), 'S2' is a station (type 1)
+    # 'S3' is a stop pointing to a non-existent ID
+    stops.loc[stops.index[0], ['stop_id', 'location_type', 'parent_station']] = ['S1', 0, 'S2']
+    stops.loc[stops.index[1], ['stop_id', 'location_type']] = ['S2', 1]
+    stops.loc[stops.index[2], ['stop_id', 'parent_station']] = ['S3', 'GHOST_STATION']
+
+    fd.stops = stops
+    fd_clean = gkc.clean_parent_stations(fd)
+
+    # S1 -> S2 is valid, should remain
+    assert fd_clean.stops[fd_clean.stops.stop_id == 'S1'].parent_station.iloc[0] == 'S2'
+    # S3 -> GHOST_STATION is invalid, should be NA
+    assert pd.isna(fd_clean.stops[fd_clean.stops.stop_id == 'S3'].parent_station.iloc[0])
+    # S2 -> S1 not pointing to a non-station type
+    stops.loc[stops.stop_id == 'S2', 'parent_station'] = 'S1'
+    fd.stops = stops
+    fd_clean_type = gkc.clean_parent_stations(fd)
+    assert pd.isna(fd_clean_type.stops[fd_clean_type.stops.stop_id == 'S2'].parent_station.iloc[0])
 
 
 def test_drop_zombies():

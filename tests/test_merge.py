@@ -75,3 +75,17 @@ def test_merge_similar_calendars():
     assert len(f1_res.calendar) == 1
 
 
+def test_concatenate_feeds():
+    f0 = sample.copy()
+    f1 = sample.copy()
+
+    fd_merged = gmg.concatenate_feeds(f0, f1)
+    assert len(fd_merged.stops) == len(f0.stops) + len(f1.stops)
+    assert len(fd_merged.routes) == len(f0.routes) + len(f1.routes)
+
+    # test missing table handling
+    f0.calendar = None
+    fd_partial = gmg.concatenate_feeds(f0, f1)
+    assert fd_partial.calendar is not None
+    assert len(fd_partial.calendar) == len(f1.calendar)
+

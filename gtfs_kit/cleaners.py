@@ -367,6 +367,40 @@ def aggregate_stops(
     return feed
 
 
+def clean_parent_stations(feed: Feed) -> Feed:
+    """
+    Clean parent_station references to ensure they point to valid stations
+    """
+    if (
+        feed.stops is None
+        or 'parent_station' not in feed.stops.columns
+        or 'location_type' not in feed.stops.columns
+    ):
+        return feed
+
+    fd = feed.copy()
+    stops = fd.stops.copy()
+
+    # determine valid parent stations
+    valid_stop_ids = set(stops['stop_id'])
+    station_ids = (
+        set(stops[stops['location_type'] == 1]['stop_id'])
+        if 'location_type' in stops.columns else valid_stop_ids
+    )
+
+    # clear invalid parent_station references
+    invalid_mask = (
+        stops['parent_station'].notna() &
+        (~stops['parent_station'].isin(station_ids) | ~stops['parent_station'].isin(valid_stop_ids))
+    )
+
+    if invalid_mask.any():
+        stops.loc[invalid_mask, 'parent_station'] = pd.NA
+
+    fd.stops = stops
+    return fd
+
+
 def clean(feed: "Feed") -> "Feed":
     """
     Apply the following functions to the given Feed in order and return the resulting

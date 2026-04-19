@@ -63,7 +63,6 @@ def merge_feeds(  # TODO: Sketched this out, to complete.
         )
 
     if merge_similar_routes:
-        pass
         p_fd0, p_fd1, conflicts['routes'] = merge_similar_routes(
             p_fd0, p_fd1
         )
@@ -186,3 +185,46 @@ def merge_similar_routes(
     fd1.routes = fd1.routes[~fd1.routes['route_id'].isin(route_mapping.keys())]
 
     return feed_0, fd1, conflicts
+
+
+def merge_similar_calendars(
+    feed_0: Feed,
+    feed_1: Feed,
+    ignore_dates: bool=False
+) -> tuple[Feed, Feed, list[dict]]:
+    """
+    Merges similar calendars based on their day schedule.
+    """
+    conflicts = []
+
+    c0 = feed_0.calendar.copy()
+    c1 = feed_1.calendar.copy()
+
+    match_cols = [
+        'monday', 'tuesday', 'wednesday', 'thursday',
+        'friday', 'saturday', 'sunday',
+    ]
+
+    if not ignore_dates:
+        match_cols += [ 'start_date', 'end_date' ]
+
+    matches = c1.merge(
+        c0,
+        on=match_cols,
+        suffixes=('_1', '_0')
+    )
+
+    if matches.empty:
+        return feed_0, feed_1, []
+
+    # create mapping and conflict report
+    service_mapping = dict(zip(matches['service_id_1'], matches['service_id_0']))
+
+    conflicts = matches[['service_id_0', 'service_id_1'] + match_cols].to_dict('records')
+
+    fd1 = feed_1.remap_ids(service_mapping, 'service_id')
+    fd1.calendar = fd1.calendar[~fd1.calendar['service_id'].isin(service_mapping.keys())]
+
+    return feed_0, fd1, conflicts
+
+

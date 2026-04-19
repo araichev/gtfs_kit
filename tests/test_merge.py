@@ -58,3 +58,20 @@ def test_merge_similar_routes():
     }]
     # was the route removed from f1.routes?
     assert f1_res.routes.empty
+
+
+def test_merge_similar_calendars():
+    f0 = sample.copy()
+    f1 = sample.copy()
+
+    f0.calendar = f0.calendar.copy()
+    f1.calendar = f1.calendar.copy()
+    f1.calendar.saturday = [0, 1]
+    f1 = f1.remap_ids({"FULLW": "NEW_NAME"}, 'service_id')
+
+    f0_res, f1_res, conflicts = f0.merge_similar_calendars(f1)
+
+    assert len(conflicts) == 1
+    assert len(f1_res.calendar) == 1
+
+

@@ -77,8 +77,11 @@ def merge_feeds(
     # Concatenate tables
     merged_feed = concatenate_feeds(p_fd0, p_fd1)
 
-    # Clean parent_station references
-    merged_feed = cn.clean_parent_stations(merged_feed)
+    if (  # Clean parent_station references
+        "parent_station" in merged_feed.stops.columns
+        and "location_type" in merged_feed.stops.columns
+    ):
+        merged_feed = cn.clean_parent_stations(merged_feed)
 
     return merged_feed, conflicts
 

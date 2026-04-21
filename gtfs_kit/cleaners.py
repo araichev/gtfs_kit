@@ -370,14 +370,12 @@ def aggregate_stops(
 
 def clean_parent_stations(feed: Feed) -> Feed:
     """
-    Clean parent_station references to ensure they point to valid stations
+    Clean parent_station references to ensure they point to valid stations.
     """
-    if (
-        feed.stops is None
-        or "parent_station" not in feed.stops.columns
-        or "location_type" not in feed.stops.columns
-    ):
-        return feed
+    if "parent_station" not in feed.stops.columns:
+        raise AttributeError("No column `parent_station` found in stops")
+    if "location_type" not in feed.stops.columns:
+        raise AttributeError("No column `location_type` found in stops")
 
     fd = feed.copy()
     stops = fd.stops.copy()

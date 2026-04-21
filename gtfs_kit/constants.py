@@ -164,8 +164,6 @@ ID_REMAP = {
         ("stop_times", "stop_id"),
         ("transfers", "from_stop_id"),
         ("transfers", "to_stop_id"),
-        # ('pathways', 'from_stop_id'),
-        # ('pathways', 'to_stop_id'),
         ("stops", "parent_station"),
     ],
     "route_id": [

@@ -20,20 +20,20 @@ def test_remap_ids():
     assert fd.stops.iloc[0].parent_station == "X"
 
 
-def test_merge_similar_stops():
+def test_diff_stops():
     fd = sample.copy()
 
     # check conflicts is created correctly
     # also check conflicts are removed
-    f0, f1, conflicts = fd.merge_similar_stops(fd)
-    assert len(conflicts) == len(f0.stops)
-    assert len(f0.stops) == 9
+    f1, conflicts = fd.diff_stops(fd)
+    assert len(conflicts) == len(fd.stops)
+    assert len(fd.stops) == 9
     assert len(f1.stops) == 0
 
     # check stops are dropped on matching stop_id
     f0 = gkc.extend_id(fd, "stop_id", "0_")
     f0 = f0.remap_ids({"0_AMV": "AMV"}, "stop_id")
-    f0, f1, conflicts = f0.merge_similar_stops(fd)
+    f1, conflicts = f0.diff_stops(fd)
     assert conflicts == [
         {
             "stop_id_0": "AMV",
@@ -58,20 +58,20 @@ def test_merge_stops_with_prefixes():
     f0.stops = f0.stops[f0.stops.stop_id == '0_AMV'].copy()
     f1.stops = f1.stops[f1.stops.stop_id == '1_AMV'].copy()
 
-    f0_res, f1_res, conflicts = f0.merge_similar_stops(f1, prefix_0='0_', prefix_1='1_')
+    f1_res, conflicts = f0.diff_stops(f1, prefix_0='0_', prefix_1='1_')
 
     assert len(conflicts) == 1
     assert f1_res.stops.empty
 
 
-def test_merge_similar_routes():
+def test_diff_routes():
     f0 = sample.copy()
     f1 = sample.copy()
 
     f0.routes = f0.routes[f0.routes.route_short_name == "10"].copy()
     f1.routes = f1.routes[f1.routes.route_short_name == "10"].copy()
 
-    f0_res, f1_res, conflicts = f0.merge_similar_routes(f1)
+    f1_res, conflicts = f0.diff_routes(f1)
     # did it find the match?
     assert len(conflicts) == 1
     assert conflicts == [
@@ -86,7 +86,7 @@ def test_merge_similar_routes():
     assert f1_res.routes.empty
 
 
-def test_merge_similar_calendars():
+def test_diff_calendars():
     f0 = sample.copy()
     f1 = sample.copy()
 
@@ -95,7 +95,7 @@ def test_merge_similar_calendars():
     f1.calendar.saturday = [0, 1]
     f1 = f1.remap_ids({"FULLW": "NEW_NAME"}, "service_id")
 
-    f0_res, f1_res, conflicts = f0.merge_similar_calendars(f1)
+    f1_res, conflicts = f0.diff_calendars(f1)
 
     assert len(conflicts) == 1
     assert len(f1_res.calendar) == 1

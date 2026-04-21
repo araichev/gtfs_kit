@@ -6,10 +6,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import geopandas as gpd
-import numpy as np
 import pandas as pd
-import shapely.geometry as sg
 
 from . import cleaners as cn
 from . import constants as cs
@@ -38,14 +35,14 @@ def merge_feeds(
     conflicting entities.
 
     Args:
-        feed_0: The first feed to merge
-        feed_1: The second feed to merge
-        prefix_0: Prefix to add to all IDs in feed_0
-        prefix_1: Prefix to add to all IDs in feed_1
-        merge_stops_ids: Merge stops with matching IDs
-        merge_route_names: Merge routes with similar attributes
+        ``feed_0``: The first feed to merge
+        ``feed_1``: The second feed to merge
+        ``prefix_0``: Prefix to add to all IDs in feed_0
+        ``prefix_1``: Prefix to add to all IDs in feed_1
+        ``merge_stops_ids``: Merge stops with matching IDs
+        ``merge_route_names``: Merge routes with similar attributes
             (route_short_name filled with route_long_name, route_type)
-        merge_calendars: Merge calendars with same service patterns
+        ``merge_calendars``: Merge calendars with same service patterns
             (same days active, same start and end dates)
         **kwargs: Additional keyword arguments for any of the sub-functions
 
@@ -61,17 +58,17 @@ def merge_feeds(
 
     # Merge similars
     if merge_stop_ids:
-        p_fd0, p_fd1, conflicts["stop_id"] = merge_similar_stops(
+        p_fd1, conflicts["stop_id"] = diff_stops(
             p_fd0, p_fd1, prefix_0, prefix_1, **kwargs
         )
 
     if merge_route_names:
-        p_fd0, p_fd1, conflicts["routes"] = merge_similar_routes(
+        p_fd1, conflicts["routes"] = diff_routes(
             p_fd0, p_fd1, **kwargs
         )
 
     if merge_calendars:
-        p_fd0, p_fd1, conflicts["calendars"] = merge_similar_calendars(
+        p_fd1, conflicts["calendars"] = diff_calendars(
             p_fd0, p_fd1, **kwargs
         )
 
@@ -89,6 +86,8 @@ def merge_feeds(
 def remap_ids(feed: Feed, id_mapping: dict[str, str], id_type: str) -> Feed:
     """
     Replace IDs in a feed according to ``id_mapping``.
+
+    Currently, only works for "stop_id", "route_id" and "service_id".
     """
     fd = feed.copy()
 
@@ -103,14 +102,15 @@ def remap_ids(feed: Feed, id_mapping: dict[str, str], id_type: str) -> Feed:
     return fd
 
 
-def merge_similar_stops(
+def diff_stops(
     feed_0: Feed, feed_1: Feed, prefix_0: str = "", prefix_1: str = "", **kwargs
 ) -> tuple[Feed, Feed, list[dict]]:
     """
-    Merge stops with matching IDs after removing prefixes
+    Compare stops in a feed with matching IDs and return a new minimal feed with
+    matches filled from ``feed_0``.
 
-    This function identifies stops that have the same underlying ID
-    (e.g., '0_stop_A' and '1_stop_A' both map to 'stop_A').
+    Optionally specify prefixes to be stripped from the ID fields before
+    comparison.
     """
 
     conflicts = []
@@ -138,7 +138,7 @@ def merge_similar_stops(
     )
 
     if matches.empty:
-        return feed_0, feed_1, []
+        return feed_1, []
 
     # create the mapping for remap_ids
     stop_mapping = dict(zip(matches["stop_id_1"], matches["stop_id_0"]))
@@ -154,14 +154,18 @@ def merge_similar_stops(
     fd1.stops = fd1.stops[~fd1.stops["stop_id"].isin(ids_to_remove)]
     fd1 = fd1.remap_ids(stop_mapping, "stop_id")
 
-    return feed_0, fd1, conflicts
+    return fd1, conflicts
 
 
-def merge_similar_routes(
+def diff_routes(
     feed_0: Feed, feed_1: Feed, **kwargs
 ) -> tuple[Feed, Feed, list[dict]]:
     """
-    Merge routes based on Agency, Short Name (or Long Name), and Type.
+    Compare routes based on Name and Type and return a minimal feed with
+    matches filled from ``feed_0``.
+
+    `route_short_name` is used initially, filling missing gaps with
+    `route_long_name`. Only works for matching types (`route_type`).
     """
     conflicts = []
 
@@ -182,7 +186,7 @@ def merge_similar_routes(
     )
 
     if matches.empty:
-        return feed_0, feed_1, []
+        return feed_1, []
 
     # create mapping and conflict report
     route_mapping = dict(zip(matches["route_id_1"], matches["route_id_0"]))
@@ -198,14 +202,16 @@ def merge_similar_routes(
     fd1.routes = fd1.routes[~fd1.routes["route_id"].isin(ids_to_remove)]
     fd1 = fd1.remap_ids(route_mapping, "route_id")
 
-    return feed_0, fd1, conflicts
+    return fd1, conflicts
 
 
-def merge_similar_calendars(
+def diff_calendars(
     feed_0: Feed, feed_1: Feed, ignore_dates: bool = False, **kwargs
 ) -> tuple[Feed, Feed, list[dict]]:
     """
-    Merges similar calendars based on their day schedule.
+    Compare calendars based on their active days and start, end dates. Return a
+    new minimal feed with matches filled from ``feed_0``.
+
     If ``ignore_dates``, ignore calendar start and end dates.
     """
     conflicts = []
@@ -229,7 +235,7 @@ def merge_similar_calendars(
     matches = c1.merge(c0, on=match_cols, suffixes=("_1", "_0"))
 
     if matches.empty:
-        return feed_0, feed_1, []
+        return feed_1, []
 
     # create mapping and conflict report
     service_mapping = dict(zip(matches["service_id_1"], matches["service_id_0"]))
@@ -242,7 +248,7 @@ def merge_similar_calendars(
     fd1.calendar = fd1.calendar[~fd1.calendar["service_id"].isin(ids_to_remove)]
     fd1 = fd1.remap_ids(service_mapping, "service_id")
 
-    return feed_0, fd1, conflicts
+    return fd1, conflicts
 
 
 def concatenate_feeds(feed_0: Feed, feed_1: Feed) -> Feed:

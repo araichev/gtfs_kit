@@ -1,8 +1,6 @@
-[!IMPORTANT]
-**This repository has moved.**
-Because GitHub's performance has degraded significantly, this repository has moved to Forgejo. Active development continues at **https://git.disroot.org/araichev/gtfs_kit**. This GitHub copy is archived and will not receive updates, issues, or pull requests. Please file issues and submit changes on Forgejo.GTFS Kit
+GTFS Kit
 ********
-.. image:: https://github.com/mrcagney/gtfs_kit/actions/workflows/test.yml/badge.svg
+.. image:: https://github.com/araichev/gtfs_kit/actions/workflows/test.yml/badge.svg
 
 GTFS Kit is a Python 3.10+ library for analyzing `General Transit Feed Specification (GTFS) <https://en.wikipedia.org/wiki/GTFS>`_ data in memory without a database.
 It uses Pandas and GeoPandas to do the heavy lifting.
